@@ -38,6 +38,15 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 8px
 .scroll{overflow-x:auto}.tabs{display:flex;gap:8px;margin:16px 0}
 .stack>*+*{margin-top:16px}.pos{font-family:'Chakra Petch';font-weight:700;color:var(--cy);width:40px}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;color:#04101f;padding:10px 18px;border-radius:8px;font-weight:600;display:none;z-index:9}
+header nav{display:flex;flex-wrap:wrap;gap:6px 18px}.logo{text-decoration:none}.logo .fg{display:inline-block;background:var(--cy);color:#04101f;padding:0 6px;margin-right:8px;border-radius:5px;font-style:italic}
+.hero2{text-align:center;padding:48px 0 28px;background:radial-gradient(ellipse at top,#0d2a4d,transparent 70%)}.hero2 h1{font-size:clamp(34px,7vw,64px);line-height:1.05}.hero2 h1 span{color:var(--cy)}.hero2 p{color:var(--mut);margin:14px auto 20px;max-width:34em}
+.alt2{background:transparent;color:var(--tx);border:1px solid var(--line)}.stats{display:grid;gap:12px;grid-template-columns:repeat(3,1fr);margin:18px 0}.stat{text-align:center}.stat b{display:block;font:700 30px 'Chakra Petch';color:var(--cy)}
+.rk{border:1px solid;border-radius:99px;padding:1px 9px;font-size:12px;font-weight:600}
+.ad{display:flex;gap:12px;align-items:center;position:relative;background:#101f3a;border:1px dashed var(--cy);border-radius:10px;padding:12px;margin:14px 0;cursor:pointer}.ad img{height:56px;border-radius:6px}.adtag{position:absolute;top:-9px;left:10px;background:var(--bg);font-size:11px;color:var(--mut);padding:0 6px}
+.ad.mini{margin:0;padding:6px 10px}.ad.mini img{height:36px}#adtop .ad{margin:0;border-radius:0;border-width:0 0 1px}
+.adsticky{position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;align-items:center;background:var(--panel);border-top:2px solid var(--cy);padding:8px 12px;z-index:8}.adsticky .ad{flex:1}
+.pop{position:fixed;inset:0;background:#000c;display:grid;place-items:center;z-index:20;padding:16px}.pop .card{max-width:460px;width:100%;text-align:center}
+footer{border-top:1px solid var(--line);padding:24px 20px 100px;color:var(--mut);font-size:14px;text-align:center}
 .br{display:flex;gap:16px;overflow-x:auto;padding-bottom:8px}.col{min-width:200px;display:flex;flex-direction:column;justify-content:space-around;gap:12px}
 .m{border:1px solid var(--line);border-radius:8px;background:#091428}.side{display:flex;justify-content:space-between;gap:8px;padding:7px 10px;font-size:14px}
 .side+.side{border-top:1px solid var(--line)}.win{color:var(--ok);font-weight:600}.m .ctl{display:flex;gap:4px;padding:6px;border-top:1px solid var(--line)}.m input{width:46px;padding:4px 6px}
@@ -47,7 +56,10 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 8px
 </head>
 <body>
 <header id="top"></header>
+<div id="adtop"></div>
 <main id="app"><p class="mut">Cargando...</p></main>
+<footer id="foot"></footer>
+<div id="adbar"></div>
 <div id="toast" role="status"></div>
 <script>
 // ====== CONFIGURACIÓN ======
@@ -292,6 +304,131 @@ async function viewReceipt(path){
   const { data, error } = await sb.storage.from('receipts').createSignedUrl(path, 60);
   if (error) return toast(error.message); window.open(data.signedUrl, '_blank');
 }
+
+// ====== V2: diseño FGE, publicidad y páginas nuevas (redefine funciones anteriores) ======
+// Rangos: Oro (desde 20.000) y Platino (25.000) salen de tu perfil; el resto son valores a ajustar.
+const RANKS = [['Novato',0,'#94a3b8'],['Bronce',5000,'#c08457'],['Plata',12000,'#cbd5e1'],['Oro',20000,'#fbbf24'],['Platino',25000,'#67e8f9'],['Diamante',35000,'#60a5fa'],['Maestro',50000,'#c084fc'],['Mega Maestro',75000,'#f472b6']];
+const rbadge = e => { const r = [...RANKS].reverse().find(x => (e || 0) >= x[1]) || RANKS[0]; return `<span class="rk" style="color:${r[2]};border-color:${r[2]}66">${r[0]}</span>`; };
+let sponsors = [], cfg = null, navCount = 0;
+const isPlus = () => !!(profile && profile.plus_until && new Date(profile.plus_until) > new Date());
+const showAds = () => !isPlus() && sponsors.length > 0;
+
+async function loadCfg(){
+  if (cfg) return;
+  const a = await sb.from('app_settings').select('key,value'); cfg = Object.fromEntries((a.data || []).map(r => [r.key, r.value]));
+  const b = await sb.from('sponsors').select('*').eq('is_active', true); sponsors = b.data || [];
+}
+function adBox(cls = ''){
+  if (!showAds()) return '';
+  const s = sponsors[Math.floor(Math.random() * sponsors.length)];
+  sb.from('sponsor_events').insert({ sponsor_id: s.id, type: 'impression' }).then(() => {});
+  return `<div class="ad ${cls}" data-id="${s.id}" data-url="${esc(s.link)}" onclick="adClick(this)"><span class="adtag">Publicidad</span>${s.image_url ? `<img src="${esc(s.image_url)}" alt="">` : ''}<div><b>${esc(s.name)}</b><div class="mut">${esc(s.description)}</div></div></div>`;
+}
+function adClick(el){ sb.from('sponsor_events').insert({ sponsor_id: el.dataset.id, type: 'click' }).then(() => {}); if (el.dataset.url) window.open(el.dataset.url, '_blank', 'noopener'); }
+function countdown(btn, secs, label, done){
+  let n = secs; btn.disabled = true; btn.textContent = `${label} (${n})`;
+  const t = setInterval(() => { n--; if (n <= 0) { clearInterval(t); btn.disabled = false; btn.textContent = 'Cerrar'; btn.onclick = done; } else btn.textContent = `${label} (${n})`; }, 1000);
+}
+function adExtras(){
+  document.getElementById('adtop').innerHTML = adBox('mini');
+  const bar = document.getElementById('adbar');
+  if (!showAds()) { bar.innerHTML = ''; return; }
+  bar.innerHTML = `<div class="adsticky">${adBox('mini')}<button class="alt" id="adx"></button></div>`;
+  countdown(document.getElementById('adx'), 5, 'Cerrar en', () => { bar.innerHTML = ''; });
+  navCount++;
+  if (navCount % 4 === 0) {
+    const d = document.createElement('div'); d.className = 'pop';
+    d.innerHTML = `<div class="card stack">${adBox()}<p class="mut">¿Cansado de la publicidad? <a href="#/plus" onclick="this.closest('.pop').remove()">Pasate a FastGame Plus</a></p><button></button></div>`;
+    document.body.appendChild(d); countdown(d.querySelector('button'), 5, 'Podés cerrar en', () => d.remove());
+  }
+}
+function header(){
+  const h = location.hash || '#/';
+  const l = (href, t) => `<a href="${href}" class="${h === href ? 'on' : ''}">${t}</a>`;
+  document.getElementById('top').innerHTML = `<a href="#/" class="logo"><span class="fg">FG</span>FAST<b>GAME</b> ESPORTS</a><nav>${l('#/','Inicio')}${l('#/torneos','Torneos')}${l('#/ranking','Ranking')}${l('#/plus','⭐ Plus')}${l('#/jugadores','Jugadores')}${isAdmin() ? l('#/admin','Admin') : ''}${me ? l('#/perfil','Mi perfil') + '<a href="#" onclick="logout();return false">Salir</a>' : l('#/login','Ingresar')}</nav>`;
+}
+function footer(){
+  const lk = (k, t) => cfg?.[k] ? `<a href="${esc(cfg[k])}" target="_blank" rel="noopener">${t}</a>` : '';
+  document.getElementById('foot').innerHTML = `<b style="color:#fff">FastGame Esports</b> · Competí. Ganá. Subí de ranking.<div class="row" style="justify-content:center;margin-top:8px">${lk('social_kick','Kick')} ${lk('social_youtube','YouTube')} ${lk('whatsapp_group_url','WhatsApp')}</div>`;
+}
+const tcard = t => `<a href="#/torneo/${t.id}" class="card"><span class="tag">${ST[t.status]}</span><h3 style="margin-top:8px">${esc(t.name)}</h3><div class="mut">${esc(t.game)} · ${fdate(t.date)} ${esc(t.time)}</div><div style="margin-top:8px">${t.prize ? 'Premio: <b>' + esc(t.prize) + '</b><br>' : ''}${t.is_free ? 'Gratis' : '$' + t.price + ' ARS'}</div></a>`;
+
+async function viewHome(){
+  const [ts, pc, top] = await Promise.all([sb.from('tournaments').select('*').order('date'), sb.from('profiles').select('*', { count: 'exact', head: true }), sb.from('profiles').select('nick,elo_points,wins,tournaments_won').order('elo_points', { ascending: false }).limit(1)]);
+  const all = ts.data || [], open = all.filter(t => t.status === 'open'), f = top.data?.[0];
+  app.innerHTML = `<section class="hero2"><h1>COMPETÍ. GANÁ.<br><span>SUBÍ DE RANKING.</span></h1><p>Torneos de distintos juegos, ranking ELO y premios reales. Todo en un solo lugar.</p><div class="row" style="justify-content:center"><a class="btn" href="#/torneos">Ver torneos →</a><a class="btn alt2" href="#/ranking">Ver ranking</a></div></section>${adBox()}
+    ${open.length ? `<h2 style="margin:16px 0 10px">Inscripciones abiertas</h2><div class="grid">${open.map(tcard).join('')}</div>` : `<div class="card"><span class="tag">Próximamente</span><h3 style="margin-top:8px">Se viene la próxima fecha</h3><p class="mut">Todavía no hay torneos abiertos. Volvé pronto.</p></div>`}
+    <div class="stats"><div class="card stat"><b>${pc.count || 0}</b><span class="mut">Jugadores registrados</span></div><div class="card stat"><b>${all.filter(t => t.status === 'finished').length}</b><span class="mut">Torneos jugados</span></div><div class="card stat"><b>${open.length}</b><span class="mut">Torneos abiertos</span></div></div>
+    ${f ? `<div class="card"><span class="mut">Jugador destacado</span><h2>${esc(f.nick)} ${rbadge(f.elo_points)}</h2><div class="mut">${f.tournaments_won} torneos ganados · ${f.wins} victorias · ${f.elo_points} ELO</div></div>` : ''}
+    ${sponsors.length ? `<h2 style="margin:24px 0 10px">Quiénes nos apoyan</h2><div class="grid">${sponsors.map(s => `<div class="card ad" data-id="${s.id}" data-url="${esc(s.link)}" onclick="adClick(this)" style="margin:0">${s.image_url ? `<img src="${esc(s.image_url)}" alt="">` : ''}<div><b>${esc(s.name)}</b><div class="mut">${esc(s.description)}</div></div></div>`).join('')}</div>` : ''}
+    ${cfg.sponsor_whatsapp_url ? `<div class="card row" style="justify-content:space-between;margin-top:18px"><div><h3>¿Querés ser sponsor de FastGame?</h3><p class="mut">Mostrá tu marca en torneos, transmisiones y toda la comunidad FGE.</p></div><a class="btn" href="${esc(cfg.sponsor_whatsapp_url)}" target="_blank" rel="noopener">Publicitá con nosotros</a></div>` : ''}
+    ${cfg.stream_url ? `<div class="card row" style="justify-content:space-between;margin-top:14px"><div><h3>Mirá la última transmisión de FGE</h3><p class="mut">Partidas, finales y momentos de la comunidad.</p></div><a class="btn" href="${esc(cfg.stream_url)}" target="_blank" rel="noopener">Ver transmisión</a></div>` : ''}`;
+}
+async function viewTorneos(){
+  const { data } = await sb.from('tournaments').select('*').order('date');
+  window._ts = data || [];
+  app.innerHTML = `<h1 style="margin-bottom:12px">Torneos</h1><select id="fs" onchange="fTorneos()" style="max-width:260px;margin-bottom:14px"><option value="">Todos los estados</option>${Object.entries(ST).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>${adBox()}<div class="grid" id="tl"></div>`; fTorneos();
+}
+function fTorneos(){ const s = document.getElementById('fs').value, l = window._ts.filter(t => !s || t.status === s); document.getElementById('tl').innerHTML = l.map(tcard).join('') || '<div class="card mut">No hay torneos con ese filtro.</div>'; }
+async function viewRanking(){
+  const { data, error } = await sb.from('profiles').select('nick,elo_points,wins,losses,tournaments_won').eq('account_status', 'active').order('elo_points', { ascending: false }).limit(100);
+  if (error) throw error;
+  app.innerHTML = `<h1>Ranking FGE</h1><p class="mut" style="margin-bottom:12px">Los mejores jugadores de la comunidad, de Novato a Mega Maestro.</p>${adBox()}<div class="card scroll"><table><tr><th>#</th><th>Jugador</th><th>Rango</th><th>ELO</th><th>V / D</th><th>Torneos</th></tr>${(data || []).map((p, i) => `<tr><td class="pos">${i + 1}</td><td>${esc(p.nick)}</td><td>${rbadge(p.elo_points)}</td><td><b>${p.elo_points}</b></td><td>${p.wins} / ${p.losses}</td><td>${p.tournaments_won}</td></tr>`).join('') || '<tr><td colspan="6" class="mut">Todavía no hay jugadores.</td></tr>'}</table></div>`;
+}
+async function viewPlayers(){
+  const { data } = await sb.from('profiles').select('nick,elo_points').eq('account_status', 'active').order('elo_points', { ascending: false });
+  window._pl = data || [];
+  app.innerHTML = `<h1 style="margin-bottom:12px">Jugadores</h1><input id="ps" placeholder="Buscar por nick..." oninput="fPlayers()" style="max-width:320px;margin-bottom:14px">${adBox()}<div class="grid" id="pl"></div>`; fPlayers();
+}
+function fPlayers(){ const q = document.getElementById('ps').value.toLowerCase(); document.getElementById('pl').innerHTML = window._pl.filter(p => p.nick.toLowerCase().includes(q)).map(p => `<div class="card row" style="justify-content:space-between"><b>${esc(p.nick)}</b>${rbadge(p.elo_points)}<span style="color:var(--cy)">${p.elo_points}</span></div>`).join('') || '<div class="card mut">No encontramos jugadores.</div>'; }
+function viewPlus(){
+  const wa = cfg.whatsapp_group_url || cfg.sponsor_whatsapp_url;
+  app.innerHTML = `<div class="stack" style="max-width:640px;margin:0 auto"><h1>⭐ FastGame Plus</h1><p class="mut">Free para arrancar, Plus para llevar tu experiencia al siguiente nivel.</p>
+    <div class="grid"><div class="card"><h3>Free</h3><h2>Gratis</h2><p class="mut">Torneos, brackets y resultados · Perfil y ranking ELO · Publicidad en el sitio.</p></div>
+    <div class="card" style="border-color:var(--cy)"><h3>Plus</h3><h2>US$ 3,99 <small class="mut">/mes</small></h2><p>Todo lo de Free, más: <b>sin publicidad en todo el sitio</b>, recompensas ampliadas y acceso completo a la tienda.</p>${isPlus() ? `<span class="tag ok">Tu Plus está activo hasta el ${fdate(profile.plus_until.slice(0, 10))}</span>` : wa ? `<a class="btn" href="${esc(wa)}" target="_blank" rel="noopener">Pedir Plus por WhatsApp</a>` : '<p class="mut">Escribile al administrador para activarlo.</p>'}</div></div></div>`;
+}
+async function route(){
+  await loadCfg(); header();
+  const h = location.hash || '#/';
+  try {
+    if (h.startsWith('#/torneo/')) await viewTournament(h.split('/')[2]);
+    else if (h === '#/torneos') await viewTorneos();
+    else if (h === '#/ranking') await viewRanking();
+    else if (h === '#/jugadores') await viewPlayers();
+    else if (h === '#/plus') viewPlus();
+    else if (h === '#/login') viewLogin();
+    else if (h === '#/perfil') await viewProfile();
+    else if (h === '#/admin') await viewAdmin();
+    else await viewHome();
+  } catch (e) { app.innerHTML = `<div class="card"><h3>Algo salió mal</h3><p class="mut">${esc(e.message)}</p></div>`; }
+  footer(); adExtras(); window.scrollTo(0, 0);
+}
+// Admin: nueva solapa Sponsors
+async function viewAdmin(){
+  if (!isAdmin()) { app.innerHTML = '<div class="card">Esta sección es solo para administradores.</div>'; return; }
+  const tabs = [['torneos','Torneos'],['inscripciones','Inscripciones'],['pagos','Pagos'],['sponsors','Sponsors']];
+  const body = adminTab === 'torneos' ? await adminTournaments() : adminTab === 'inscripciones' ? await adminRegs() : adminTab === 'pagos' ? await adminPayments() : await adminSponsors();
+  app.innerHTML = `<h1>Panel de administración</h1><div class="tabs">${tabs.map(([k, l]) => `<button class="${adminTab === k ? '' : 'alt'}" onclick="adminTab='${k}';route()">${l}</button>`).join('')}</div>${body}`;
+}
+async function adminSponsors(){
+  const { data } = await sb.from('sponsors').select('*').order('created_at', { ascending: false });
+  const cnt = async (id, t) => (await sb.from('sponsor_events').select('*', { count: 'exact', head: true }).eq('sponsor_id', id).eq('type', t)).count || 0;
+  const rows = await Promise.all((data || []).map(async s => ({ s, i: await cnt(s.id, 'impression'), c: await cnt(s.id, 'click') })));
+  return `<div class="card"><h3 style="margin-bottom:10px">Nuevo sponsor</h3><form onsubmit="addSponsor(event)"><div class="two"><label>Nombre<input name="name" required></label><label>Link (Instagram, web, WhatsApp)<input name="link" placeholder="https://..."></label></div><label>Texto promocional<input name="description"></label><label>Logo o banner<input type="file" name="img" accept="image/*"></label><button>Agregar sponsor</button></form></div>
+  <div class="card scroll" style="margin-top:14px"><table><tr><th>Sponsor</th><th>Impresiones</th><th>Clics</th><th>CTR</th><th></th></tr>${rows.map(({ s, i, c }) => `<tr><td>${esc(s.name)}<div class="mut">${s.is_active ? 'Activo' : 'Apagado'}</div></td><td>${i}</td><td>${c}</td><td>${i ? (c / i * 100).toFixed(2) : 0}%</td><td class="row"><button class="alt" onclick="setS('${s.id}',${!s.is_active})">${s.is_active ? 'Apagar' : 'Activar'}</button><button class="del" onclick="delS('${s.id}')">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="5" class="mut">Todavía no cargaste sponsors.</td></tr>'}</table></div>`;
+}
+async function addSponsor(e){
+  e.preventDefault(); const f = new FormData(e.target), file = f.get('img'); let url = '';
+  if (file && file.size) {
+    const path = `sponsors/${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '_')}`;
+    const up = await sb.storage.from('public-assets').upload(path, file); if (up.error) return toast(up.error.message);
+    url = sb.storage.from('public-assets').getPublicUrl(path).data.publicUrl;
+  }
+  const { error } = await sb.from('sponsors').insert({ name: f.get('name'), link: f.get('link') || '', description: f.get('description') || '', image_url: url });
+  if (error) return toast(error.message); cfg = null; toast('Sponsor agregado'); route();
+}
+async function setS(id, v){ await sb.from('sponsors').update({ is_active: v }).eq('id', id); cfg = null; route(); }
+async function delS(id){ if (!confirm('¿Eliminar este sponsor?')) return; await sb.from('sponsors').delete().eq('id', id); cfg = null; route(); }
 
 window.addEventListener('hashchange', route);
 sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; profile = null; } });
