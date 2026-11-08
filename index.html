@@ -38,6 +38,9 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 8px
 .scroll{overflow-x:auto}.tabs{display:flex;gap:8px;margin:16px 0}
 .stack>*+*{margin-top:16px}.pos{font-family:'Chakra Petch';font-weight:700;color:var(--cy);width:40px}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;color:#04101f;padding:10px 18px;border-radius:8px;font-weight:600;display:none;z-index:9}
+.br{display:flex;gap:16px;overflow-x:auto;padding-bottom:8px}.col{min-width:200px;display:flex;flex-direction:column;justify-content:space-around;gap:12px}
+.m{border:1px solid var(--line);border-radius:8px;background:#091428}.side{display:flex;justify-content:space-between;gap:8px;padding:7px 10px;font-size:14px}
+.side+.side{border-top:1px solid var(--line)}.win{color:var(--ok);font-weight:600}.m .ctl{display:flex;gap:4px;padding:6px;border-top:1px solid var(--line)}.m input{width:46px;padding:4px 6px}
 @media(max-width:520px){.two{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
 </style>
@@ -103,7 +106,9 @@ async function viewHome(){
 async function viewTournament(id){
   const { data: t, error } = await sb.from('tournaments').select('*').eq('id', id).single();
   if (error || !t) { app.innerHTML = '<div class="card">No encontramos ese torneo.</div>'; return; }
-  const { data: parts } = await sb.from('participants').select('nick').eq('tournament_id', id).eq('status', 'active');
+  const { data: parts } = await sb.from('participants').select('id,nick').eq('tournament_id', id).eq('status', 'active');
+  const { data: ms } = await sb.from('matches').select('*').eq('tournament_id', id).order('round').order('position');
+  const bracketHtml = bracket(t, ms || [], parts || []);
   let reg = null, pay = null;
   if (me) {
     reg = (await sb.from('registrations').select('*').eq('tournament_id', id).eq('user_id', me.id).maybeSingle()).data;
@@ -125,7 +130,7 @@ async function viewTournament(id){
     <div class="mut">${esc(t.game)} · ${fdate(t.date)} ${esc(t.time)} · ${t.total_slots ? 'Cupos libres: ' + t.available_slots + '/' + t.total_slots : 'Sin límite de cupos'}</div>
     ${t.prize ? `<p>Premio: <b>${esc(t.prize)}</b></p>` : ''}${t.info ? `<p>${esc(t.info)}</p>` : ''}${t.rules ? `<h3>Reglas</h3><p style="white-space:pre-wrap">${esc(t.rules)}</p>` : ''}</div>
     <div class="card"><h3 style="margin-bottom:10px">Inscripción</h3>${box}</div>
-    <div class="card"><h3 style="margin-bottom:8px">Jugadores confirmados (${parts?.length || 0})</h3><div class="mut">${(parts || []).map(p => esc(p.nick)).join(' · ') || 'Todavía no hay jugadores confirmados.'}</div></div></div>`;
+    ${bracketHtml}<div class="card"><h3 style="margin-bottom:8px">Jugadores confirmados (${parts?.length || 0})</h3><div class="mut">${(parts || []).map(p => esc(p.nick)).join(' · ') || 'Todavía no hay jugadores confirmados.'}</div></div></div>`;
 }
 async function register(e, tid){
   e.preventDefault(); const f = new FormData(e.target);
@@ -175,6 +180,57 @@ async function viewProfile(){
   const { data: regs } = await sb.from('registrations').select('status,tournaments(id,name,date)').eq('user_id', me.id).order('created_at', { ascending: false });
   app.innerHTML = `<div class="stack"><h1>${esc(profile?.nick)}</h1><div class="card row"><div><div class="mut">ELO</div><h2>${profile?.elo_points ?? 0}</h2></div><div style="margin-left:24px"><div class="mut">Monedas</div><h2>${profile?.coins ?? 0}</h2></div></div>
     <div class="card"><h3 style="margin-bottom:8px">Mis inscripciones</h3>${(regs || []).map(r => `<div class="row" style="padding:6px 0"><a href="#/torneo/${r.tournaments.id}">${esc(r.tournaments.name)}</a><span class="mut">${fdate(r.tournaments.date)}</span>${tag(r.status)}</div>`).join('') || '<p class="mut">Todavía no te inscribiste a ningún torneo.</p>'}</div></div>`;
+}
+
+// ====== LLAVES (eliminación directa) ======
+function bracket(t, ms, parts){
+  const nick = id => parts.find(p => p.id === id)?.nick || '?';
+  const rounds = {}; ms.forEach(m => (rounds[m.round] = rounds[m.round] || []).push(m));
+  const R = Object.keys(rounds).length;
+  const rname = r => r === R ? 'Final' : (r === R - 1 && R > 1) ? 'Semifinal' : (r === R - 2 && R > 2) ? 'Cuartos' : 'Ronda ' + r;
+  const side = (m, pid, sc) => `<div class="side ${m.winner && m.winner === pid ? 'win' : ''}"><span>${pid ? esc(nick(pid)) : (m.status === 'finished' ? 'Libre' : 'Por definir')}</span><b>${pid && m.status === 'finished' ? sc : ''}</b></div>`;
+  const card = m => `<div class="m">${side(m, m.participant_a, m.score_a)}${side(m, m.participant_b, m.score_b)}
+    ${isAdmin() && m.status !== 'finished' && m.participant_a && m.participant_b ? `<div class="ctl"><input type="number" min="0" id="sa_${m.id}" value="0"><input type="number" min="0" id="sb_${m.id}" value="0"><button onclick="saveResult('${m.id}')">Guardar</button></div>` : ''}</div>`;
+  const cols = Object.keys(rounds).map(r => `<div class="col"><div class="mut">${rname(+r)}</div>${rounds[r].map(card).join('')}</div>`).join('');
+  return `<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3>Llaves</h3>${isAdmin() ? `<button class="alt" onclick="genBracket('${t.id}')">${ms.length ? 'Regenerar llaves' : 'Generar llaves'}</button>` : ''}</div>
+    ${ms.length ? `<div class="br">${cols}</div>` : '<p class="mut">Las llaves se publican cuando empieza el torneo.</p>'}</div>`;
+}
+async function genBracket(tid){
+  const { data: ps } = await sb.from('participants').select('id').eq('tournament_id', tid).eq('status', 'active');
+  if (!ps || ps.length < 2) return toast('Necesitás al menos 2 jugadores confirmados');
+  if (!confirm(`Se van a sortear las llaves con ${ps.length} jugadores. Si ya había llaves, se borran junto con sus resultados. ¿Seguir?`)) return;
+  const ids = ps.map(p => p.id).sort(() => Math.random() - 0.5);
+  let size = 2; while (size < ids.length) size *= 2;
+  const half = size / 2, R = Math.log2(size), rounds = [];
+  for (let r = 1; r <= R; r++) { rounds[r] = []; for (let i = 0; i < size / 2 ** r; i++) rounds[r].push({ tournament_id: tid, round: r, position: i, participant_a: null, participant_b: null, winner: null, status: 'pending' }); }
+  for (let i = 0; i < half; i++) { rounds[1][i].participant_a = ids[i]; rounds[1][i].participant_b = ids[half + i] || null; }
+  rounds[1].forEach((m, i) => { // pases libres
+    if (!m.participant_b) {
+      m.winner = m.participant_a; m.status = 'finished';
+      const nx = rounds[2] && rounds[2][i >> 1];
+      if (nx) { if (i % 2 === 0) nx.participant_a = m.winner; else nx.participant_b = m.winner; }
+    }
+  });
+  const del = await sb.from('matches').delete().eq('tournament_id', tid); if (del.error) return toast(del.error.message);
+  const ins = await sb.from('matches').insert(rounds.slice(1).flat()); if (ins.error) return toast(ins.error.message);
+  await sb.from('tournaments').update({ status: 'in_progress' }).eq('id', tid);
+  toast('Llaves generadas'); route();
+}
+async function saveResult(mid){
+  const a = +document.getElementById('sa_' + mid).value, b = +document.getElementById('sb_' + mid).value;
+  if (a === b) return toast('No puede haber empate');
+  const { data: m } = await sb.from('matches').select('*').eq('id', mid).single();
+  const w = a > b ? m.participant_a : m.participant_b;
+  const u = await sb.from('matches').update({ score_a: a, score_b: b, winner: w, status: 'finished' }).eq('id', mid);
+  if (u.error) return toast(u.error.message);
+  const { data: nx } = await sb.from('matches').select('id').eq('tournament_id', m.tournament_id).eq('round', m.round + 1).eq('position', m.position >> 1).maybeSingle();
+  if (nx) await sb.from('matches').update(m.position % 2 === 0 ? { participant_a: w } : { participant_b: w }).eq('id', nx.id);
+  else {
+    const { data: p } = await sb.from('participants').select('nick').eq('id', w).single();
+    await sb.from('tournaments').update({ status: 'finished', winners: [{ position: 1, nick: p.nick }] }).eq('id', m.tournament_id);
+    toast('¡Torneo finalizado! Campeón: ' + p.nick);
+  }
+  route();
 }
 
 // ====== PANEL ADMIN ======
