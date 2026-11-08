@@ -552,6 +552,150 @@ async function addItem(e){
 async function setI(id, v){ await sb.from('shop_items').update({ is_active: v }).eq('id', id); route(); }
 async function delI(id){ if (confirm('¿Eliminar este ítem? Se quita del inventario de quienes lo compraron.')) { await sb.from('shop_items').delete().eq('id', id); route(); } }
 
+// ====== V4: juegos animados, perfil con fotos, Plus con comprobante y admin ampliado ======
+document.head.insertAdjacentHTML('beforeend', '<style>.dice{width:96px;height:96px;margin:6px auto;background:#fff;border-radius:16px;display:grid;grid-template:repeat(3,1fr)/repeat(3,1fr);padding:12px;box-shadow:0 6px 0 #94a3b8}.dice i{border-radius:50%;margin:3px}.dice i.on{background:#0b1730}.dice.roll{animation:shk .15s infinite}@keyframes shk{25%{transform:rotate(-14deg) translateY(-8px)}75%{transform:rotate(14deg) translateY(4px)}}.c3{width:110px;height:110px;margin:6px auto;position:relative;transform-style:preserve-3d;perspective:600px}.c3 .in{position:absolute;inset:0;transform-style:preserve-3d}.cf{position:absolute;inset:0;border-radius:50%;backface-visibility:hidden;display:grid;place-items:center;align-content:center;background:radial-gradient(circle at 30% 30%,#fde68a,#d97706);border:5px solid #b45309;color:#78350f;box-shadow:inset 0 0 12px #92400e}.cf b{font:700 34px Chakra Petch}.cf small{font-size:11px;font-weight:700}.cb{transform:rotateY(180deg)}.wheel{max-width:340px;margin:0 auto;display:block}.pimg{width:100%;height:100%;object-fit:cover}.avc.big{width:96px;height:96px}</style>');
+let busy = false;
+const WHEEL = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+const REDS = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+const PIPS = { 1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8] };
+const dice = (n, roll) => `<div class="dice ${roll ? 'roll' : ''}">${[0,1,2,3,4,5,6,7,8].map(i => `<i class="${PIPS[n].includes(i) ? 'on' : ''}"></i>`).join('')}</div>`;
+function wheelSvg(){
+  const cx = 160, cy = 170, R = 140, r = 88, a = 2 * Math.PI / 37, pt = (rad, ang) => `${(cx + rad * Math.cos(ang)).toFixed(1)},${(cy + rad * Math.sin(ang)).toFixed(1)}`;
+  const sl = WHEEL.map((n, i) => { const a0 = i * a - a / 2 - Math.PI / 2, a1 = a0 + a, col = n === 0 ? '#15803d' : REDS.has(n) ? '#b91c1c' : '#111827';
+    return `<path d="M${pt(r, a0)} L${pt(R, a0)} A${R} ${R} 0 0 1 ${pt(R, a1)} L${pt(r, a1)} A${r} ${r} 0 0 0 ${pt(r, a0)}Z" fill="${col}" stroke="#d4af37" stroke-width=".8"/><text x="${cx}" y="${cy - 118}" transform="rotate(${(i * 360 / 37).toFixed(2)} ${cx} ${cy})" text-anchor="middle" dominant-baseline="middle" font-size="10" font-weight="700" fill="#fff">${n}</text>`; }).join('');
+  return `<svg class="wheel" viewBox="0 0 320 340"><circle cx="${cx}" cy="${cy}" r="154" fill="#5b3a1a" stroke="#d4af37" stroke-width="3"/><g id="wh" style="transform-origin:160px 170px">${sl}<circle cx="${cx}" cy="${cy}" r="${r - 4}" fill="#1f2937" stroke="#d4af37" stroke-width="2"/><circle cx="${cx}" cy="${cy}" r="46" fill="#7c5a1c"/><circle cx="${cx}" cy="${cy}" r="14" fill="#fbbf24"/></g><g id="ball" style="transform-origin:160px 170px"><circle cx="160" cy="52" r="6" fill="#fff" stroke="#9ca3af"/></g><polygon points="152,2 168,2 160,20" fill="#fbbf24"/></svg>`;
+}
+async function loadHist(){
+  const { data } = await sb.from('bets').select('*').eq('user_id', me.id).order('created_at', { ascending: false }).limit(10), el = document.getElementById('hist');
+  if (el) el.innerHTML = (data || []).map(b => `<tr><td>${b.game}</td><td>${esc(b.detail)}</td><td>${cf(b.amount)}</td><td style="color:var(--${b.net >= 0 ? 'ok' : 'bad'})">${b.net >= 0 ? '+' : ''}${cf(b.net)}</td></tr>`).join('') || '<tr><td colspan="4" class="mut">Todavía no jugaste.</td></tr>';
+}
+async function afterPlay(d, txt){
+  busy = false; await loadMe(); header(); const el = document.getElementById('bal'); if (el) el.textContent = '🪙 ' + cf(profile.coins);
+  toast((d.win ? '¡Ganaste ' : 'Perdiste ') + cf(Math.abs(d.net)) + ' monedas! ' + txt); loadHist();
+}
+async function viewArena(){
+  if (!me) { app.innerHTML = '<div class="card">Para jugar, <a href="#/login">ingresá o creá tu cuenta</a>.</div>'; return; }
+  const plus = isPlus(), bet = '<label>Apuesta<input type="number" name="bet" min="10" value="500"></label>';
+  app.innerHTML = `<h1>Arena FGE</h1><p class="mut" style="margin:4px 0 12px">Minijuegos con Monedas FGE. El ELO no se apuesta ni se compra: se gana jugando torneos.</p>${adBox()}
+    <div class="card row" style="justify-content:space-between"><div><div class="mut">Tu saldo</div><h2 id="bal">🪙 ${cf(profile.coins)}</h2></div><div><button onclick="rpc('claim_daily',{},'¡Recompensa reclamada!')">Reclamar recompensa diaria (${plus ? '8.000' : '1.000'})</button><div class="mut" style="margin-top:4px">${plus ? 'Plan Plus' : 'Free: 5.000 la primera vez, luego 1.000 por día. Plus: 8.000'}</div></div></div>
+    <div class="grid" style="margin-top:14px"><div class="card"><h3>Coinflip · x2</h3><div class="c3"><div class="in" id="c3"><div class="cf"><b>FG</b><small>CARA</small></div><div class="cf cb"><b>✚</b><small>CRUZ</small></div></div></div><form onsubmit="playCoin(event)">${bet}<div class="two"><button name="side" value="cara">Cara</button><button name="side" value="cruz">Cruz</button></div></form></div>
+    <div class="card"><h3>Dado · x5</h3><div id="dbox">${dice(1)}</div><form onsubmit="playDice(event)">${bet}<label>Tu número<select name="num">${[1,2,3,4,5,6].map(n => `<option>${n}</option>`).join('')}</select></label><button>Tirar el dado</button></form></div></div>
+    <div class="card" style="margin-top:14px"><h3>Ruleta europea</h3><p class="mut">37 casilleros (0 a 36). El 0 es verde y pierde todas las apuestas excepto número exacto.</p>${wheelSvg()}<div id="rnum" style="text-align:center;min-height:30px;margin:8px 0"></div>
+    <form onsubmit="playRoul(event)"><div class="two">${bet}<label>Apostás a<select name="type"><option value="red">Rojo · x2</option><option value="black">Negro · x2</option><option value="even">Par · x2</option><option value="odd">Impar · x2</option><option value="dozen1">1ª docena (1-12) · x3</option><option value="dozen2">2ª docena (13-24) · x3</option><option value="dozen3">3ª docena (25-36) · x3</option><option value="number">Número exacto · x36</option></select></label></div><label>Número exacto (solo si elegiste "Número exacto")<input type="number" name="num" min="0" max="36" value="7"></label><button>Girar ruleta</button></form></div>
+    <h3 style="margin:18px 0 8px">Últimas apuestas</h3><div class="card scroll"><table><tr><th>Juego</th><th>Resultado</th><th>Apuesta</th><th>Balance</th></tr><tbody id="hist"></tbody></table></div>`;
+  loadHist();
+}
+async function playCoin(e){
+  e.preventDefault(); if (busy) return; busy = true; const f = new FormData(e.target);
+  const { data, error } = await sb.rpc('play_coinflip', { p_bet: +f.get('bet'), p_side: e.submitter.value }); if (error) { busy = false; return toast(error.message); }
+  const c = document.getElementById('c3'); c.style.transition = 'none'; c.style.transform = 'rotateY(0deg)'; void c.offsetWidth; c.style.transition = 'transform 1.4s ease-out'; c.style.transform = `rotateY(${data.outcome === 'cara' ? 1800 : 1980}deg)`;
+  setTimeout(() => afterPlay(data, 'Salió ' + data.outcome), 1500);
+}
+async function playDice(e){
+  e.preventDefault(); if (busy) return; busy = true; const f = new FormData(e.target);
+  const { data, error } = await sb.rpc('play_dice', { p_bet: +f.get('bet'), p_number: +f.get('num') }); if (error) { busy = false; return toast(error.message); }
+  const box = document.getElementById('dbox'), t = setInterval(() => box.innerHTML = dice(1 + Math.floor(Math.random() * 6), true), 110);
+  setTimeout(() => { clearInterval(t); box.innerHTML = dice(+data.outcome); afterPlay(data, 'Salió ' + data.outcome); }, 1200);
+}
+async function playRoul(e){
+  e.preventDefault(); if (busy) return; busy = true; const f = new FormData(e.target), type = f.get('type');
+  const { data, error } = await sb.rpc('play_roulette', { p_bet: +f.get('bet'), p_type: type, p_value: type === 'number' ? +f.get('num') : null }); if (error) { busy = false; return toast(error.message); }
+  const i = WHEEL.indexOf(+data.outcome), w = document.getElementById('wh'), b = document.getElementById('ball'); document.getElementById('rnum').innerHTML = '';
+  [w, b].forEach(x => { x.style.transition = 'none'; x.style.transform = 'rotate(0deg)'; }); void w.getBoundingClientRect();
+  w.style.transition = b.style.transition = 'transform 5s cubic-bezier(.12,.6,.12,1)'; w.style.transform = `rotate(${360 * 6 - i * 360 / 37}deg)`; b.style.transform = `rotate(${-360 * 9}deg)`;
+  setTimeout(() => { document.getElementById('rnum').innerHTML = `<span class="tag ${data.color === 'verde' ? 'ok' : data.color === 'rojo' ? 'bad' : ''}" style="font-size:18px;padding:4px 16px">${data.outcome} · ${data.color}</span>`; afterPlay(data, 'Salió ' + data.outcome + ' (' + data.color + ')'); }, 5300);
+}
+// ---- Subida de imágenes ----
+async function uploadTo(bucket, file, folder){
+  if (!file || !file.size) return '';
+  if (file.size > 3 * 1024 * 1024 && bucket === 'avatars') { toast('La imagen pesa más de 3 MB'); return null; }
+  const path = `${folder}/${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '_')}`, up = await sb.storage.from(bucket).upload(path, file);
+  if (up.error) { toast(up.error.message); return null; }
+  return bucket === 'receipts' ? path : sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+async function setImg(kind, input){
+  const url = await uploadTo('avatars', input.files[0], me.id); if (!url) return;
+  const { error } = await sb.from('profiles').update({ [kind + '_url']: url }).eq('id', me.id); if (error) return toast(error.message);
+  toast('Imagen actualizada'); await loadMe(); route();
+}
+async function clearImg(kind){ await sb.from('profiles').update({ [kind + '_url']: '' }).eq('id', me.id); await loadMe(); route(); }
+async function viewProfile(){
+  if (!me || !profile) { location.hash = '#/login'; return; }
+  const [it, regs, nh] = await Promise.all([sb.from('shop_items').select('*'), sb.from('registrations').select('status,tournaments(id,name,date)').eq('user_id', me.id).order('created_at', { ascending: false }), sb.from('name_history').select('*').eq('user_id', me.id).order('created_at', { ascending: false }).limit(10)]);
+  const by = id => (it.data || []).find(x => x.id === id), eq = profile.equipped || {};
+  const av = by(eq.avatar), fr = by(eq.frame), co = by(eq.color), bg = by(eq.background), bd = by(eq.badge);
+  const e = profile.elo_points, idx = RANKS.filter(r => e >= r[1]).length - 1, nx = RANKS[idx + 1];
+  const bgv = profile.banner_url || bg?.value || 'linear-gradient(135deg,#1e293b,#0f172a)', avv = profile.avatar_url || av?.value;
+  const avh = avv ? (isUrl(avv) ? `<img class="pimg" src="${esc(avv)}" alt="">` : esc(avv)) : esc(profile.nick[0].toUpperCase());
+  app.innerHTML = `<div class="stack"><div class="card" style="padding:0;overflow:hidden"><div style="height:110px;background:${isUrl(bgv) ? `url(${esc(bgv)}) center/cover` : esc(bgv)}"></div><div class="row" style="padding:0 16px 16px;margin-top:-40px"><div class="avc big" style="border-color:${esc(fr?.value || '#1d3358')}">${avh}</div><div><h2 style="color:${esc(co?.value || '#fff')}">${esc(profile.nick)} ${bd ? esc(bd.value) : ''}</h2><div class="row">${rbadge(e)}${isPlus() ? '<span class="tag">PLUS</span>' : ''}<span class="mut">${esc(profile.name)}</span></div></div></div></div>
+    <div class="stats" style="grid-template-columns:repeat(4,1fr)"><div class="card stat"><b>${e}</b><span class="mut">ELO</span></div><div class="card stat"><b>${cf(profile.coins)}</b><span class="mut">Monedas</span></div><div class="card stat"><b>${profile.wins}/${profile.losses}</b><span class="mut">V / D</span></div><div class="card stat"><b>${profile.tournaments_won}</b><span class="mut">Torneos ganados</span></div></div>
+    ${nx ? `<div class="card"><div class="row" style="justify-content:space-between"><span class="mut">Progreso de rango</span><span class="mut">${nx[1] - e} ELO para ${nx[0]}</span></div><div class="pbar" style="margin-top:6px"><i style="width:${Math.min(100, (e - RANKS[idx][1]) / (nx[1] - RANKS[idx][1]) * 100)}%"></i></div></div>` : ''}
+    <div class="card"><h3 style="margin-bottom:10px">Personalizar perfil</h3><div class="two"><label>Foto de perfil (PNG, JPG, WebP o GIF, hasta 3 MB)<input type="file" accept="image/*" onchange="setImg('avatar',this)"></label><label>Imagen de fondo / banner<input type="file" accept="image/*" onchange="setImg('banner',this)"></label></div><div class="row" style="margin-top:8px">${profile.avatar_url ? '<button class="alt" onclick="clearImg(\'avatar\')">Quitar mi foto</button>' : ''}${profile.banner_url ? '<button class="alt" onclick="clearImg(\'banner\')">Quitar mi fondo</button>' : ''}</div>
+    <form onsubmit="saveProfile(event)" style="margin-top:12px"><div class="two"><label>Nick<input name="nick" value="${esc(profile.nick)}" required maxlength="20"></label><label>Nombre<input name="name" value="${esc(profile.name)}"></label></div><button>Guardar cambios</button></form><p class="mut" style="margin-top:8px">Marco, insignia y color de nombre se equipan desde la <a href="#/tienda">Tienda</a>. Tu foto y tu fondo propios tienen prioridad sobre los de la tienda.</p></div>
+    <div class="card"><h3 style="margin-bottom:8px">Historial de nombres</h3>${(nh.data || []).map(n => `<div class="row mut" style="padding:3px 0"><b style="color:var(--tx)">${esc(n.old_nick)}</b> → <b style="color:var(--tx)">${esc(n.new_nick)}</b><span>${new Date(n.created_at).toLocaleDateString('es-AR')}</span></div>`).join('') || '<p class="mut">Todavía no cambiaste tu nombre.</p>'}</div>
+    <div class="card"><h3 style="margin-bottom:8px">Plan actual</h3>${isPlus() ? `Plus · activo hasta ${fdate(profile.plus_until.slice(0, 10))}` : 'Free · <a href="#/plus">Conocé FastGame Plus</a>'}</div>
+    <div class="card"><h3 style="margin-bottom:8px">Mis inscripciones</h3>${(regs.data || []).map(r => `<div class="row" style="padding:6px 0"><a href="#/torneo/${r.tournaments.id}">${esc(r.tournaments.name)}</a><span class="mut">${fdate(r.tournaments.date)}</span>${tag(r.status)}</div>`).join('') || '<p class="mut">Todavía no te inscribiste a ningún torneo.</p>'}</div></div>`;
+}
+// ---- Plus con comprobante ----
+async function viewPlus(){
+  let last = null, rcpt = '';
+  if (me) { last = (await sb.from('plus_requests').select('*').eq('user_id', me.id).order('created_at', { ascending: false }).limit(1)).data?.[0];
+    if (last?.receipt_path) rcpt = (await sb.storage.from('receipts').createSignedUrl(last.receipt_path, 300)).data?.signedUrl || ''; }
+  const amt = cfg.plus_amount_ars ? `Monto a transferir: <b>$${esc(cfg.plus_amount_ars)} ARS</b>.` : '';
+  let box;
+  if (!me) box = '<p>Para pedir Plus, <a href="#/login">ingresá o creá tu cuenta</a>.</p>';
+  else if (isPlus()) box = `<span class="tag ok">Tu Plus está activo hasta el ${fdate(profile.plus_until.slice(0, 10))}</span><p class="mut">Podés extender 30 días más enviando otro comprobante.</p>`;
+  else box = '';
+  if (me && last?.status === 'pending') box += `<p><span class="tag warn">En revisión</span> Recibimos tu comprobante. Lo verificamos y te activamos Plus.</p>${rcpt ? `<img src="${esc(rcpt)}" alt="Comprobante" style="max-width:220px;border-radius:8px;border:1px solid var(--line)">` : ''}`;
+  else if (me) box += `${last?.status === 'rejected' ? `<p><span class="tag bad">Rechazado</span> ${esc(last.reject_reason)}</p>` : ''}<p class="mut">1) Transferí ${amt} a: <b>${esc(cfg.payment_cbu || 'consultá el CBU al administrador')}</b><br>2) Completá tus datos y subí el comprobante.</p>
+    <form onsubmit="sendPlus(event)"><div class="two"><label>Tu usuario<input name="nick" value="${esc(profile?.nick)}" required></label><label>Nombre y apellido<input name="name" value="${esc(profile?.name)}" required></label></div><label>Teléfono<input name="phone" required></label><label>Comprobante de pago (imagen)<input type="file" name="r" accept="image/*" required></label><button>Enviar comprobante</button></form>`;
+  app.innerHTML = `<div class="stack" style="max-width:700px;margin:0 auto"><h1>⭐ FastGame Plus</h1><p class="mut">Free para arrancar, Plus para llevar tu experiencia al siguiente nivel.</p>
+    <div class="grid"><div class="card"><h3>Free</h3><h2>Gratis</h2><p class="mut">Torneos, brackets y resultados · Perfil y ranking ELO · Arena y tienda básica · Con publicidad.</p></div>
+    <div class="card" style="border-color:var(--cy)"><h3>Plus</h3><h2>${esc(cfg.plus_price_text || 'US$ 3,99')} <small class="mut">/ 30 días</small></h2><p>Todo lo de Free, más: <b>sin publicidad en todo el sitio</b>, recompensa diaria de 8.000 monedas, tienda completa con ítems exclusivos e insignia Plus.</p></div></div>
+    <div class="card"><h3 style="margin-bottom:8px">Activar Plus</h3>${box}</div></div>`;
+}
+async function sendPlus(e){
+  e.preventDefault(); const f = new FormData(e.target), path = await uploadTo('receipts', f.get('r'), me.id); if (!path) return;
+  const { error } = await sb.from('plus_requests').insert({ user_id: me.id, nick: f.get('nick'), name: f.get('name'), phone: f.get('phone'), receipt_path: path });
+  if (error) return toast(error.message); toast('Comprobante enviado'); route();
+}
+// ---- Admin ampliado ----
+async function viewAdmin(){
+  if (!isAdmin()) { app.innerHTML = '<div class="card">Esta sección es solo para administradores.</div>'; return; }
+  const tabs = [['torneos','Torneos'],['inscripciones','Inscripciones'],['pagos','Pagos'],['plus','Plus'],['usuarios','Usuarios'],['tienda','Tienda'],['sponsors','Sponsors'],['config','Configuración']];
+  const fns = { torneos: adminTournaments, inscripciones: adminRegs, pagos: adminPayments, plus: adminPlus, usuarios: adminUsers, tienda: adminShop, sponsors: adminSponsors, config: adminConfig };
+  const body = await fns[adminTab]();
+  app.innerHTML = `<h1>Panel de administración</h1><div class="tabs" style="flex-wrap:wrap">${tabs.map(([k, l]) => `<button class="${adminTab === k ? '' : 'alt'}" onclick="adminTab='${k}';route()">${l}</button>`).join('')}</div>${body}`;
+}
+async function adminPlus(){
+  const { data } = await sb.from('plus_requests').select('*').order('created_at', { ascending: false }).limit(200);
+  return `<div class="card scroll"><table><tr><th>Jugador</th><th>Teléfono</th><th>Comprobante</th><th>Estado</th><th></th></tr>${(data || []).map(r => `<tr><td>${esc(r.nick)}<div class="mut">${esc(r.name)}</div></td><td>${esc(r.phone)}</td><td><button class="alt" onclick="viewReceipt('${esc(r.receipt_path)}')">Ver</button></td><td>${tag(r.status)}${r.reject_reason ? `<div class="mut">${esc(r.reject_reason)}</div>` : ''}</td><td class="row">${r.status === 'pending' ? `<button onclick="adm('approve_plus_request',{p_id:'${r.id}'},'Plus activado por 30 días')">Aprobar</button><button class="alt" onclick="rejPlus('${r.id}')">Rechazar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="mut">No hay solicitudes de Plus.</td></tr>'}</table></div>`;
+}
+function rejPlus(id){ const r = prompt('Motivo del rechazo (lo ve el jugador):'); if (r !== null) adm('reject_plus_request', { p_id: id, p_reason: r }); }
+async function adminShop(){
+  const { data } = await sb.from('shop_items').select('*').order('category').order('price');
+  return `<div class="card"><h3 style="margin-bottom:10px">Nuevo ítem</h3><form onsubmit="addItem(event)"><div class="two"><label>Nombre<input name="name" required></label><label>Categoría<select name="category">${CATS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label></div><div class="two"><label>Rareza<select name="rarity">${Object.entries(RAR).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select></label><label>Precio (monedas)<input type="number" name="price" min="0" value="5000"></label></div>
+    <label>Imagen o GIF animado desde tu computadora (avatar, insignia o fondo)<input type="file" name="img" accept="image/*"></label><label>…o valor manual (emoji, color #hex para marco o nombre, gradiente CSS)<input name="value" placeholder="🐺 · #38bdf8 · linear-gradient(135deg,#38bdf8,#8b5cf6)"></label><label class="row"><input type="checkbox" name="plus" style="width:auto"> Requiere Plus</label><button>Crear ítem</button></form></div>
+    <div class="card scroll" style="margin-top:14px"><table><tr><th>Vista</th><th>Ítem</th><th>Precio</th><th>Plus</th><th></th></tr>${(data || []).map(i => `<tr><td style="width:90px">${art(i)}</td><td>${esc(i.name)}<div class="mut">${i.category} · ${(RAR[i.rarity] || RAR.common)[0]}${/\.(gif|webp)$/i.test(i.value) ? ' · animado' : ''}</div></td><td>${cf(i.price)}</td><td>${i.plus_only ? 'Sí' : ''}</td><td class="row"><button class="alt" onclick="setI('${i.id}',${!i.is_active})">${i.is_active ? 'Ocultar' : 'Mostrar'}</button><button class="del" onclick="delI('${i.id}')">Eliminar</button></td></tr>`).join('')}</table></div>`;
+}
+async function addItem(e){
+  e.preventDefault(); const f = new FormData(e.target); let value = f.get('value') || '';
+  const file = f.get('img'); if (file && file.size) { const u = await uploadTo('public-assets', file, 'shop'); if (!u) return; value = u; }
+  if (!value) return toast('Subí una imagen o escribí un valor');
+  const { error } = await sb.from('shop_items').insert({ name: f.get('name'), category: f.get('category'), rarity: f.get('rarity'), price: +f.get('price') || 0, value, plus_only: f.get('plus') === 'on' });
+  if (error) return toast(error.message); toast('Ítem creado'); route();
+}
+const CFG = [['payment_cbu','CBU / alias para pagos'],['plus_amount_ars','Monto de Plus en pesos (solo el número)'],['plus_price_text','Precio de Plus a mostrar (ej: US$ 3,99)'],['social_kick','Link de Kick'],['social_youtube','Link de YouTube'],['whatsapp_group_url','Grupo de WhatsApp'],['sponsor_whatsapp_url','WhatsApp para sponsors'],['stream_url','Link de la última transmisión']];
+async function adminConfig(){
+  const { data } = await sb.from('app_settings').select('key,value'), g = k => data?.find(x => x.key === k)?.value || '';
+  return `<div class="card"><h3 style="margin-bottom:10px">Datos del sitio</h3><form onsubmit="saveCfg(event)">${CFG.map(([k, l]) => `<label>${l}<input name="${k}" value="${esc(g(k))}"></label>`).join('')}<button>Guardar configuración</button></form></div>`;
+}
+async function saveCfg(e){
+  e.preventDefault(); const f = new FormData(e.target);
+  const { error } = await sb.from('app_settings').upsert(CFG.map(([k]) => ({ key: k, value: f.get(k) || '', is_public: true })));
+  if (error) return toast(error.message); cfg = null; toast('Configuración guardada'); route();
+}
+
 window.addEventListener('hashchange', route);
 sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; profile = null; } });
 loadMe().then(route);
