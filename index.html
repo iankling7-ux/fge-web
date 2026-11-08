@@ -430,6 +430,128 @@ async function addSponsor(e){
 async function setS(id, v){ await sb.from('sponsors').update({ is_active: v }).eq('id', id); cfg = null; route(); }
 async function delS(id){ if (!confirm('¿Eliminar este sponsor?')) return; await sb.from('sponsors').delete().eq('id', id); cfg = null; route(); }
 
+// ====== V3: monedas FGE, tienda, Arena, perfil y administración ======
+document.head.insertAdjacentHTML('beforeend', '<style>.art{height:84px;border-radius:8px;display:grid;place-items:center;background:#091428;font-size:38px;overflow:hidden}.art img{width:100%;height:100%;object-fit:cover}.avc{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;font-size:36px;background:#091428;overflow:hidden;border:4px solid var(--line)}.avc img{width:100%;height:100%;object-fit:cover}.coin{font-size:64px;text-align:center;margin:6px 0}.spin{animation:sp .8s}@keyframes sp{to{transform:rotateY(720deg)}}.pbar{height:8px;border-radius:9px;background:#091428;overflow:hidden}.pbar i{display:block;height:100%;background:var(--cy)}</style>');
+const CATS = [['avatar','Avatares'],['frame','Marcos'],['badge','Insignias'],['color','Colores de nombre'],['background','Fondos']];
+const RAR = { common:['Común','#94a3b8'], rare:['Rara','#38bdf8'], epic:['Épica','#c084fc'], legendary:['Legendaria','#fbbf24'] };
+const cf = n => Number(n || 0).toLocaleString('es-AR');
+const isUrl = v => /^https?:\/\//.test(v || '');
+let shopCat = 'avatar';
+function art(i){
+  const v = i.value || '';
+  if (i.category === 'avatar') return `<div class="art">${isUrl(v) ? `<img src="${esc(v)}" alt="">` : esc(v)}</div>`;
+  if (i.category === 'frame') return `<div class="art"><div class="avc" style="border-color:${esc(v)}">🙂</div></div>`;
+  if (i.category === 'badge') return `<div class="art">${esc(v)}</div>`;
+  if (i.category === 'color') return `<div class="art"><b style="color:${esc(v)};font-size:22px">Tu nick</b></div>`;
+  return `<div class="art" style="background:${isUrl(v) ? `url(${esc(v)}) center/cover` : esc(v)}"></div>`;
+}
+function header(){
+  const h = location.hash || '#/';
+  const l = (href, t) => `<a href="${href}" class="${h === href ? 'on' : ''}">${t}</a>`;
+  document.getElementById('top').innerHTML = `<a href="#/" class="logo"><span class="fg">FG</span>FAST<b>GAME</b> ESPORTS</a><nav>${l('#/','Inicio')}${l('#/torneos','Torneos')}${l('#/ranking','Ranking')}${l('#/plus','⭐ Plus')}${l('#/jugadores','Jugadores')}${l('#/arena','Arena FGE')}${l('#/tienda','Tienda')}${isAdmin() ? l('#/admin','Admin') : ''}${me ? `<a href="#/arena" title="Tus monedas FGE">🪙 ${cf(profile?.coins)}</a>` + l('#/perfil','Mi perfil') + '<a href="#" onclick="logout();return false">Salir</a>' : l('#/login','Ingresar')}</nav>`;
+}
+async function rpc(fn, args, ok){ const { error } = await sb.rpc(fn, args); if (error) return toast(error.message); if (ok) toast(ok); await loadMe(); route(); }
+
+async function viewShop(){
+  const [it, inv] = await Promise.all([sb.from('shop_items').select('*').eq('is_active', true).order('price'), me ? sb.from('inventory').select('item_id').eq('user_id', me.id) : Promise.resolve({ data: [] })]);
+  const own = new Set((inv.data || []).map(x => x.item_id)), eq = profile?.equipped || {};
+  const list = (it.data || []).filter(i => i.category === shopCat);
+  app.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Tienda FGE</h1>${me ? `<span class="tag warn">🪙 ${cf(profile?.coins)}</span>` : ''}</div><p class="mut" style="margin:4px 0 12px">Avatares, marcos, insignias, colores y fondos para tu perfil. Las Monedas FGE no valen dinero: solo sirven en la Arena y en la tienda. Ganalas jugando en la <a href="#/arena">Arena</a>.</p>${adBox()}
+    <div class="tabs">${CATS.map(([k, l]) => `<button class="${shopCat === k ? '' : 'alt'}" onclick="shopCat='${k}';route()">${l}</button>`).join('')}</div>
+    <div class="grid">${list.map(i => { const r = RAR[i.rarity] || RAR.common, has = own.has(i.id);
+      const btn = has ? (eq[i.category] === i.id ? `<button class="alt" onclick="rpc('unequip_item',{p_cat:'${i.category}'})">Quitar</button>` : `<button onclick="rpc('equip_item',{p_item:'${i.id}'},'Equipado')">Equipar</button>`)
+        : `<button onclick="${me ? `rpc('buy_item',{p_item:'${i.id}'},'¡Comprado!')` : `location.hash='#/login'`}">Comprar</button>`;
+      return `<div class="card" style="border-color:${r[1]}88">${art(i)}<div class="row" style="justify-content:space-between;margin-top:8px"><b>${esc(i.name)}</b><span style="color:${r[1]};font-size:13px">${r[0]}</span></div>${i.plus_only ? '<span class="tag">Requiere Plus</span>' : ''}<div class="row" style="justify-content:space-between;margin-top:8px"><b style="color:var(--warn)">🪙 ${cf(i.price)}</b>${btn}</div></div>`; }).join('') || '<div class="card mut">Todavía no hay ítems en esta categoría.</div>'}</div>`;
+}
+async function viewArena(){
+  if (!me) { app.innerHTML = '<div class="card">Para jugar, <a href="#/login">ingresá o creá tu cuenta</a>.</div>'; return; }
+  const { data: h } = await sb.from('bets').select('*').eq('user_id', me.id).order('created_at', { ascending: false }).limit(10);
+  const plus = isPlus();
+  app.innerHTML = `<h1>Arena FGE</h1><p class="mut" style="margin:4px 0 12px">Minijuegos con Monedas FGE. El ELO no se apuesta ni se compra: se gana jugando torneos.</p>${adBox()}
+    <div class="card row" style="justify-content:space-between"><div><div class="mut">Tu saldo</div><h2>🪙 ${cf(profile.coins)}</h2></div><div><button onclick="rpc('claim_daily',{},'¡Recompensa reclamada!')">Reclamar recompensa diaria (${plus ? '8.000' : '1.000'})</button><div class="mut" style="margin-top:4px">${plus ? 'Plan Plus' : 'Free: 5.000 la primera vez, luego 1.000 por día. Plus: 8.000'}</div></div></div>
+    <div class="grid" style="margin-top:14px"><div class="card"><h3>Coinflip · x2</h3><div class="coin" id="g1">🪙</div><form onsubmit="play(event,'play_coinflip')"><label>Apuesta<input type="number" name="bet" min="10" value="500"></label><div class="two"><button name="side" value="cara">Cara</button><button name="side" value="cruz">Cruz</button></div></form></div>
+    <div class="card"><h3>Dado · x5</h3><div class="coin" id="g2">🎲</div><form onsubmit="play(event,'play_dice')"><label>Apuesta<input type="number" name="bet" min="10" value="500"></label><label>Tu número<select name="num">${[1,2,3,4,5,6].map(n => `<option>${n}</option>`).join('')}</select></label><button>Tirar</button></form></div></div>
+    <h3 style="margin:18px 0 8px">Últimas apuestas</h3><div class="card scroll"><table><tr><th>Juego</th><th>Resultado</th><th>Apuesta</th><th>Balance</th></tr>${(h || []).map(b => `<tr><td>${b.game}</td><td>${esc(b.detail)}</td><td>${cf(b.amount)}</td><td style="color:var(--${b.net >= 0 ? 'ok' : 'bad'})">${b.net >= 0 ? '+' : ''}${cf(b.net)}</td></tr>`).join('') || '<tr><td colspan="4" class="mut">Todavía no jugaste.</td></tr>'}</table></div>`;
+}
+async function play(e, fn){
+  e.preventDefault(); const f = new FormData(e.target), bet = +f.get('bet');
+  const args = fn === 'play_coinflip' ? { p_bet: bet, p_side: e.submitter.value } : { p_bet: bet, p_number: +f.get('num') };
+  document.getElementById(fn === 'play_coinflip' ? 'g1' : 'g2').classList.add('spin');
+  const { data, error } = await sb.rpc(fn, args);
+  if (error) { toast(error.message); route(); return; }
+  setTimeout(async () => { toast((data.win ? '¡Ganaste ' : 'Perdiste ') + cf(Math.abs(data.net)) + ' monedas! Salió ' + data.outcome); await loadMe(); route(); }, 800);
+}
+async function viewProfile(){
+  if (!me || !profile) { location.hash = '#/login'; return; }
+  const [it, regs] = await Promise.all([sb.from('shop_items').select('*'), sb.from('registrations').select('status,tournaments(id,name,date)').eq('user_id', me.id).order('created_at', { ascending: false })]);
+  const by = id => (it.data || []).find(x => x.id === id), eq = profile.equipped || {};
+  const av = by(eq.avatar), fr = by(eq.frame), co = by(eq.color), bg = by(eq.background), bd = by(eq.badge);
+  const e = profile.elo_points, idx = RANKS.filter(r => e >= r[1]).length - 1, nx = RANKS[idx + 1];
+  const bgv = bg?.value || 'linear-gradient(135deg,#1e293b,#0f172a)';
+  app.innerHTML = `<div class="stack"><div class="card" style="padding:0;overflow:hidden"><div style="height:90px;background:${isUrl(bgv) ? `url(${esc(bgv)}) center/cover` : esc(bgv)}"></div><div class="row" style="padding:0 16px 16px;margin-top:-34px"><div class="avc" style="border-color:${esc(fr?.value || '#1d3358')}">${av ? (isUrl(av.value) ? `<img src="${esc(av.value)}" alt="">` : esc(av.value)) : esc(profile.nick[0].toUpperCase())}</div><div><h2 style="color:${esc(co?.value || '#fff')}">${esc(profile.nick)} ${bd ? esc(bd.value) : ''}</h2><div class="row">${rbadge(e)}${isPlus() ? '<span class="tag">PLUS</span>' : ''}<span class="mut">${esc(profile.name)}</span></div></div></div></div>
+    <div class="stats" style="grid-template-columns:repeat(4,1fr)"><div class="card stat"><b>${e}</b><span class="mut">ELO</span></div><div class="card stat"><b>${cf(profile.coins)}</b><span class="mut">Monedas</span></div><div class="card stat"><b>${profile.wins}/${profile.losses}</b><span class="mut">V / D</span></div><div class="card stat"><b>${profile.tournaments_won}</b><span class="mut">Torneos ganados</span></div></div>
+    ${nx ? `<div class="card"><div class="row" style="justify-content:space-between"><span class="mut">Progreso de rango</span><span class="mut">${nx[1] - e} ELO para ${nx[0]}</span></div><div class="pbar" style="margin-top:6px"><i style="width:${Math.min(100, (e - RANKS[idx][1]) / (nx[1] - RANKS[idx][1]) * 100)}%"></i></div></div>` : ''}
+    <div class="card"><h3 style="margin-bottom:10px">Editar perfil</h3><form onsubmit="saveProfile(event)"><div class="two"><label>Nick<input name="nick" value="${esc(profile.nick)}" required maxlength="20"></label><label>Nombre<input name="name" value="${esc(profile.name)}"></label></div><button>Guardar cambios</button></form><p class="mut" style="margin-top:8px">Avatar, marco, insignia, color y fondo se equipan desde la <a href="#/tienda">Tienda</a>.</p></div>
+    <div class="card"><h3 style="margin-bottom:8px">Plan actual</h3>${isPlus() ? `Plus · activo hasta ${fdate(profile.plus_until.slice(0, 10))}` : 'Free · <a href="#/plus">Conocé FastGame Plus</a>'}</div>
+    <div class="card"><h3 style="margin-bottom:8px">Mis inscripciones</h3>${(regs.data || []).map(r => `<div class="row" style="padding:6px 0"><a href="#/torneo/${r.tournaments.id}">${esc(r.tournaments.name)}</a><span class="mut">${fdate(r.tournaments.date)}</span>${tag(r.status)}</div>`).join('') || '<p class="mut">Todavía no te inscribiste a ningún torneo.</p>'}</div></div>`;
+}
+async function saveProfile(e){
+  e.preventDefault(); const f = new FormData(e.target);
+  const { error } = await sb.from('profiles').update({ nick: f.get('nick').trim(), name: f.get('name').trim() }).eq('id', me.id);
+  if (error) return toast(error.message.includes('unique') ? 'Ese nick ya está en uso' : error.message);
+  toast('Perfil actualizado'); await loadMe(); route();
+}
+async function route(){
+  await loadCfg(); header();
+  const h = location.hash || '#/';
+  try {
+    if (h.startsWith('#/torneo/')) await viewTournament(h.split('/')[2]);
+    else if (h === '#/torneos') await viewTorneos();
+    else if (h === '#/ranking') await viewRanking();
+    else if (h === '#/jugadores') await viewPlayers();
+    else if (h === '#/plus') viewPlus();
+    else if (h === '#/tienda') await viewShop();
+    else if (h === '#/arena') await viewArena();
+    else if (h === '#/login') viewLogin();
+    else if (h === '#/perfil') await viewProfile();
+    else if (h === '#/admin') await viewAdmin();
+    else await viewHome();
+  } catch (e) { app.innerHTML = `<div class="card"><h3>Algo salió mal</h3><p class="mut">${esc(e.message)}</p></div>`; }
+  footer(); adExtras(); window.scrollTo(0, 0);
+}
+// ---- Admin: Usuarios y Tienda ----
+async function viewAdmin(){
+  if (!isAdmin()) { app.innerHTML = '<div class="card">Esta sección es solo para administradores.</div>'; return; }
+  const tabs = [['torneos','Torneos'],['inscripciones','Inscripciones'],['pagos','Pagos'],['usuarios','Usuarios'],['tienda','Tienda'],['sponsors','Sponsors']];
+  const fns = { torneos: adminTournaments, inscripciones: adminRegs, pagos: adminPayments, usuarios: adminUsers, tienda: adminShop, sponsors: adminSponsors };
+  const body = await fns[adminTab]();
+  app.innerHTML = `<h1>Panel de administración</h1><div class="tabs" style="flex-wrap:wrap">${tabs.map(([k, l]) => `<button class="${adminTab === k ? '' : 'alt'}" onclick="adminTab='${k}';route()">${l}</button>`).join('')}</div>${body}`;
+}
+async function adm(fn, args, msg){ const { error } = await sb.rpc(fn, args); if (error) return toast(error.message); toast(msg || 'Listo'); route(); }
+function admAdj(id, f){ const a = prompt('Monto (con signo menos para restar):'); if (a === null || a === '' || isNaN(+a)) return; adm('admin_adjust', { p_user: id, p_field: f, p_amount: +a, p_reason: prompt('Motivo:') || '' }); }
+function admReset(id){ if (confirm('¿Resetear ELO, monedas, estadísticas e inventario de este jugador?')) adm('admin_reset_profile', { p_user: id }); }
+function admDel(id){ if (confirm('¿Eliminar esta cuenta? No se puede deshacer.')) adm('admin_delete_user', { p_user: id }); }
+async function adminUsers(){
+  const { data } = await sb.from('profiles').select('*').order('elo_points', { ascending: false }).limit(300);
+  const ST2 = { active: 'Activo', suspended: 'Suspendido', banned: 'Baneado' };
+  return `<div class="card scroll"><table><tr><th>Jugador</th><th>ELO</th><th>Monedas</th><th>Plus hasta</th><th>Estado</th><th>Acciones</th></tr>${(data || []).map(p => `<tr><td>${esc(p.nick)}<div class="mut">${p.role}</div></td><td>${p.elo_points}</td><td>${cf(p.coins)}</td><td>${p.plus_until && new Date(p.plus_until) > new Date() ? fdate(p.plus_until.slice(0, 10)) : '—'}</td>
+    <td><select onchange="adm('admin_set_status',{p_user:'${p.id}',p_status:this.value})">${Object.entries(ST2).map(([k, v]) => `<option value="${k}" ${p.account_status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+    <td class="row"><button class="alt" onclick="admAdj('${p.id}','elo_points')">ELO ±</button><button class="alt" onclick="admAdj('${p.id}','coins')">Monedas ±</button><button class="alt" onclick="adm('admin_set_plus',{p_user:'${p.id}',p_days:30})">+30 días Plus</button><button class="alt" onclick="adm('admin_set_plus',{p_user:'${p.id}',p_days:0})">Quitar Plus</button><button class="alt" onclick="admReset('${p.id}')">Resetear</button>${p.role === 'admin' ? '' : `<button class="del" onclick="admDel('${p.id}')">Eliminar</button>`}</td></tr>`).join('')}</table></div>`;
+}
+async function adminShop(){
+  const { data } = await sb.from('shop_items').select('*').order('category').order('price');
+  return `<div class="card"><h3 style="margin-bottom:10px">Nuevo ítem</h3><form onsubmit="addItem(event)"><div class="two"><label>Nombre<input name="name" required></label><label>Categoría<select name="category">${CATS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label></div><div class="two"><label>Rareza<select name="rarity">${Object.entries(RAR).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select></label><label>Precio (monedas)<input type="number" name="price" min="0" value="5000"></label></div>
+    <label>Valor (avatar/insignia: emoji o URL de imagen · marco y color: #hex · fondo: gradiente CSS o URL)<input name="value" required></label><label class="row"><input type="checkbox" name="plus" style="width:auto"> Requiere Plus</label><button>Crear ítem</button></form></div>
+    <div class="card scroll" style="margin-top:14px"><table><tr><th>Ítem</th><th>Categoría</th><th>Precio</th><th>Plus</th><th></th></tr>${(data || []).map(i => `<tr><td>${esc(i.name)}<div class="mut">${(RAR[i.rarity] || RAR.common)[0]}</div></td><td>${i.category}</td><td>${cf(i.price)}</td><td>${i.plus_only ? 'Sí' : ''}</td><td class="row"><button class="alt" onclick="setI('${i.id}',${!i.is_active})">${i.is_active ? 'Ocultar' : 'Mostrar'}</button><button class="del" onclick="delI('${i.id}')">Eliminar</button></td></tr>`).join('')}</table></div>`;
+}
+async function addItem(e){
+  e.preventDefault(); const f = new FormData(e.target);
+  const { error } = await sb.from('shop_items').insert({ name: f.get('name'), category: f.get('category'), rarity: f.get('rarity'), price: +f.get('price') || 0, value: f.get('value'), plus_only: f.get('plus') === 'on' });
+  if (error) return toast(error.message); toast('Ítem creado'); route();
+}
+async function setI(id, v){ await sb.from('shop_items').update({ is_active: v }).eq('id', id); route(); }
+async function delI(id){ if (confirm('¿Eliminar este ítem? Se quita del inventario de quienes lo compraron.')) { await sb.from('shop_items').delete().eq('id', id); route(); } }
+
 window.addEventListener('hashchange', route);
 sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; profile = null; } });
 loadMe().then(route);
