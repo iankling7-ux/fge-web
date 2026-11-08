@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FastGame Esports | Torneos de juegos móviles y PC</title>
+<meta name="description" content="Torneos de Clash Royale y más juegos móviles y de PC. Inscribite, competí y subí en el ranking de FastGame Esports.">
+<meta property="og:title" content="FastGame Esports">
+<meta property="og:description" content="Torneos de juegos móviles y PC. Inscribite y competí por premios.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+:root{--bg:#07101f;--panel:#0e1b33;--line:#1d3358;--cy:#38bdf8;--tx:#e8f1ff;--mut:#8aa0c2;--ok:#4ade80;--bad:#f87171;--warn:#fbbf24}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 Inter,system-ui,sans-serif}
+h1,h2,h3,.logo{font-family:'Chakra Petch',sans-serif;margin:0}
+a{color:var(--cy);text-decoration:none}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+.logo{font-size:22px;font-weight:700;color:#fff;margin-right:auto}.logo b{color:var(--cy)}
+header a{color:var(--mut);font-weight:500}header a:hover,header a.on{color:#fff}
+main{max-width:1000px;margin:0 auto;padding:24px 20px 80px}
+.hero{padding:36px 0 24px}.hero h1{font-size:clamp(30px,6vw,52px);line-height:1.05;max-width:14em}
+.hero p{color:var(--mut);max-width:32em}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card h3{font-size:19px;margin-bottom:4px}.mut{color:var(--mut);font-size:14px}
+.tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;background:#12305a;color:var(--cy)}
+.tag.ok{background:#0f3a24;color:var(--ok)}.tag.bad{background:#451a1a;color:var(--bad)}.tag.warn{background:#44340b;color:var(--warn)}
+button,.btn{background:var(--cy);color:#04101f;border:0;border-radius:8px;padding:9px 16px;font:600 14px Inter,sans-serif;cursor:pointer;display:inline-block}
+button.alt{background:transparent;color:var(--tx);border:1px solid var(--line)}button.del{background:#451a1a;color:var(--bad)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid var(--cy);outline-offset:2px}
+form{display:grid;gap:10px}label{font-size:13px;color:var(--mut);display:grid;gap:4px}
+input,select,textarea{background:#091428;color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;width:100%}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.two{display:grid;gap:10px;grid-template-columns:1fr 1fr}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:14px}
+.scroll{overflow-x:auto}.tabs{display:flex;gap:8px;margin:16px 0}
+.stack>*+*{margin-top:16px}.pos{font-family:'Chakra Petch';font-weight:700;color:var(--cy);width:40px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;color:#04101f;padding:10px 18px;border-radius:8px;font-weight:600;display:none;z-index:9}
+@media(max-width:520px){.two{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<header id="top"></header>
+<main id="app"><p class="mut">Cargando...</p></main>
+<div id="toast" role="status"></div>
+<script>
+// ====== CONFIGURACIÓN ======
+const SUPABASE_URL = 'https://ehffewpqzmadlulxjslt.supabase.co'; // verificá que sea la Project URL de tu proyecto
+const SUPABASE_KEY = 'sb_publishable_RAXrXtIVXwPgocQxiFSmtA_e7LpeOZM';
+// ===========================
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const app = document.getElementById('app');
+let me = null, profile = null, adminTab = 'torneos';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ST = {coming_soon:'Próximamente',open:'Inscripciones abiertas',full:'Completo',in_progress:'En curso',finished:'Finalizado',cancelled:'Cancelado'};
+const RS = {pending:['Pendiente','warn'],confirmed:['Confirmada','ok'],rejected:['Rechazada','bad'],cancelled:['Cancelada','bad'],approved:['Aprobado','ok']};
+const fdate = d => d ? new Date(d + 'T00:00').toLocaleDateString('es-AR') : '';
+const tag = (s) => { const r = RS[s] || [s,'']; return `<span class="tag ${r[1]}">${r[0]}</span>`; };
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',3500);}
+const isAdmin = () => profile && profile.role === 'admin';
+
+function header(){
+  const h = location.hash || '#/';
+  const l = (href, txt) => `<a href="${href}" class="${h===href?'on':''}">${txt}</a>`;
+  document.getElementById('top').innerHTML = `<span class="logo">FAST<b>GAME</b> ESPORTS</span>${l('#/','Torneos')}${l('#/ranking','Ranking')}`
+    + (isAdmin() ? l('#/admin','Admin') : '')
+    + (me ? `<a href="#/perfil">${esc(profile?.nick || 'Perfil')}</a><a href="#" onclick="logout();return false">Salir</a>` : l('#/login','Ingresar'));
+}
+async function loadMe(){
+  const { data:{ session } } = await sb.auth.getSession();
+  me = session?.user || null; profile = null;
+  if (me) { const { data } = await sb.from('profiles').select('*').eq('id', me.id).single(); profile = data; }
+}
+async function logout(){ await sb.auth.signOut(); await loadMe(); location.hash = '#/'; route(); }
+
+async function route(){
+  header();
+  const h = location.hash || '#/';
+  try {
+    if (h.startsWith('#/torneo/')) await viewTournament(h.split('/')[2]);
+    else if (h === '#/ranking') await viewRanking();
+    else if (h === '#/login') viewLogin();
+    else if (h === '#/perfil') await viewProfile();
+    else if (h === '#/admin') await viewAdmin();
+    else await viewHome();
+  } catch (e) { app.innerHTML = `<div class="card"><h3>Algo salió mal</h3><p class="mut">${esc(e.message)}</p></div>`; }
+  window.scrollTo(0, 0);
+}
+
+async function viewHome(){
+  const { data, error } = await sb.from('tournaments').select('*').order('date', { ascending: true });
+  if (error) throw error;
+  const cards = (data || []).map(t => `<a href="#/torneo/${t.id}" class="card"><span class="tag">${ST[t.status]}</span>
+    <h3 style="margin-top:8px">${esc(t.name)}</h3><div class="mut">${esc(t.game)} · ${fdate(t.date)} ${esc(t.time)}</div>
+    <div style="margin-top:8px">${t.prize ? 'Premio: <b>' + esc(t.prize) + '</b><br>' : ''}${t.is_free ? 'Gratis' : '$' + t.price + ' ARS'}</div></a>`).join('');
+  app.innerHTML = `<section class="hero"><h1>Competí en torneos de juegos móviles y PC</h1><p>Inscribite, jugá y subí posiciones en el ranking de la comunidad.</p></section>
+    <h2 style="margin-bottom:12px">Torneos</h2>${cards ? `<div class="grid">${cards}</div>` : '<div class="card mut">Todavía no hay torneos publicados. Volvé pronto.</div>'}`;
+}
+
+async function viewTournament(id){
+  const { data: t, error } = await sb.from('tournaments').select('*').eq('id', id).single();
+  if (error || !t) { app.innerHTML = '<div class="card">No encontramos ese torneo.</div>'; return; }
+  const { data: parts } = await sb.from('participants').select('nick').eq('tournament_id', id).eq('status', 'active');
+  let reg = null, pay = null;
+  if (me) {
+    reg = (await sb.from('registrations').select('*').eq('tournament_id', id).eq('user_id', me.id).maybeSingle()).data;
+    if (reg) pay = (await sb.from('payments').select('*').eq('registration_id', reg.id).maybeSingle()).data;
+  }
+  const cbu = (await sb.from('app_settings').select('value').eq('key', 'payment_cbu').maybeSingle()).data?.value;
+  let box;
+  if (!me) box = '<p>Para inscribirte, <a href="#/login">ingresá o creá tu cuenta</a>.</p>';
+  else if (reg) {
+    box = `<p>Tu inscripción: ${tag(reg.status)}</p>`;
+    if (!t.is_free && reg.status === 'pending' && !pay) box += `<p class="mut">Pagá $${t.price} ARS${cbu ? ' a: <b>' + esc(cbu) + '</b>' : ''} y subí el comprobante.</p>
+      <form onsubmit="sendReceipt(event,'${reg.id}','${t.id}',${t.price})"><input type="file" name="f" accept="image/*,.pdf" required><button>Enviar comprobante</button></form>`;
+    else if (pay && pay.status === 'pending') box += '<p class="mut">Recibimos tu comprobante. Lo revisamos y confirmamos tu lugar.</p>';
+  } else if (t.status === 'open' && t.registration_mode === 'open') {
+    box = `<form onsubmit="register(event,'${t.id}')"><div class="two"><label>Nombre<input name="name" required value="${esc(profile?.name)}"></label><label>Nick en el juego<input name="nick" required value="${esc(profile?.nick)}"></label></div>
+      <label>Celular (WhatsApp)<input name="phone" required></label><button>Inscribirme${t.is_free ? '' : ' · $' + t.price}</button></form>`;
+  } else box = `<p class="mut">Las inscripciones no están abiertas (${ST[t.status]}).</p>`;
+  app.innerHTML = `<div class="stack"><a href="#/">← Torneos</a><div class="card"><span class="tag">${ST[t.status]}</span><h1 style="margin:8px 0">${esc(t.name)}</h1>
+    <div class="mut">${esc(t.game)} · ${fdate(t.date)} ${esc(t.time)} · ${t.total_slots ? 'Cupos libres: ' + t.available_slots + '/' + t.total_slots : 'Sin límite de cupos'}</div>
+    ${t.prize ? `<p>Premio: <b>${esc(t.prize)}</b></p>` : ''}${t.info ? `<p>${esc(t.info)}</p>` : ''}${t.rules ? `<h3>Reglas</h3><p style="white-space:pre-wrap">${esc(t.rules)}</p>` : ''}</div>
+    <div class="card"><h3 style="margin-bottom:10px">Inscripción</h3>${box}</div>
+    <div class="card"><h3 style="margin-bottom:8px">Jugadores confirmados (${parts?.length || 0})</h3><div class="mut">${(parts || []).map(p => esc(p.nick)).join(' · ') || 'Todavía no hay jugadores confirmados.'}</div></div></div>`;
+}
+async function register(e, tid){
+  e.preventDefault(); const f = new FormData(e.target);
+  const { error } = await sb.rpc('register_for_tournament', { p_tournament_id: tid, p_name: f.get('name'), p_nick: f.get('nick'), p_phone: f.get('phone'), p_extra: {} });
+  if (error) return toast(error.message);
+  toast('¡Inscripción registrada!'); route();
+}
+async function sendReceipt(e, rid, tid, amount){
+  e.preventDefault(); const file = e.target.f.files[0]; if (!file) return;
+  const path = `${me.id}/${rid}-${Date.now()}.${(file.name.split('.').pop() || 'jpg').toLowerCase()}`;
+  const up = await sb.storage.from('receipts').upload(path, file);
+  if (up.error) return toast(up.error.message);
+  const { error } = await sb.from('payments').insert({ registration_id: rid, tournament_id: tid, user_id: me.id, player_name: profile?.name || profile?.nick || '', amount, receipt_path: path });
+  if (error) return toast(error.message);
+  toast('Comprobante enviado'); route();
+}
+
+async function viewRanking(){
+  const { data, error } = await sb.from('profiles').select('nick,elo_points,wins,losses,tournaments_won').eq('account_status', 'active').order('elo_points', { ascending: false }).limit(100);
+  if (error) throw error;
+  app.innerHTML = `<h1 style="margin-bottom:14px">Ranking</h1><div class="card scroll"><table><tr><th>#</th><th>Jugador</th><th>ELO</th><th>V</th><th>D</th><th>Torneos ganados</th></tr>
+    ${(data || []).map((p, i) => `<tr><td class="pos">${i + 1}</td><td>${esc(p.nick)}</td><td><b>${p.elo_points}</b></td><td>${p.wins}</td><td>${p.losses}</td><td>${p.tournaments_won}</td></tr>`).join('') || '<tr><td colspan="6" class="mut">Todavía no hay jugadores.</td></tr>'}</table></div>`;
+}
+
+function viewLogin(){
+  app.innerHTML = `<div class="card stack" style="max-width:420px;margin:20px auto"><h2>Ingresar</h2>
+    <form onsubmit="login(event)"><label>Email<input type="email" name="email" required autocomplete="email"></label><label>Contraseña<input type="password" name="pw" required minlength="6" autocomplete="current-password"></label><button>Ingresar</button></form>
+    <h2>Crear cuenta</h2>
+    <form onsubmit="signup(event)"><label>Nick<input name="nick" required maxlength="20"></label><label>Nombre<input name="name" required></label><label>Email<input type="email" name="email" required></label>
+    <label>Contraseña (mínimo 6)<input type="password" name="pw" required minlength="6" autocomplete="new-password"></label><button class="alt">Crear cuenta</button></form></div>`;
+}
+async function login(e){
+  e.preventDefault(); const f = new FormData(e.target);
+  const { error } = await sb.auth.signInWithPassword({ email: f.get('email'), password: f.get('pw') });
+  if (error) return toast('Email o contraseña incorrectos');
+  await loadMe(); location.hash = '#/'; route();
+}
+async function signup(e){
+  e.preventDefault(); const f = new FormData(e.target);
+  const { data, error } = await sb.auth.signUp({ email: f.get('email'), password: f.get('pw'), options: { data: { nick: f.get('nick'), name: f.get('name') } } });
+  if (error) return toast(error.message);
+  if (!data.session) return toast('Cuenta creada. Revisá tu email para confirmarla.');
+  await loadMe(); location.hash = '#/'; route();
+}
+async function viewProfile(){
+  if (!me) { location.hash = '#/login'; return; }
+  const { data: regs } = await sb.from('registrations').select('status,tournaments(id,name,date)').eq('user_id', me.id).order('created_at', { ascending: false });
+  app.innerHTML = `<div class="stack"><h1>${esc(profile?.nick)}</h1><div class="card row"><div><div class="mut">ELO</div><h2>${profile?.elo_points ?? 0}</h2></div><div style="margin-left:24px"><div class="mut">Monedas</div><h2>${profile?.coins ?? 0}</h2></div></div>
+    <div class="card"><h3 style="margin-bottom:8px">Mis inscripciones</h3>${(regs || []).map(r => `<div class="row" style="padding:6px 0"><a href="#/torneo/${r.tournaments.id}">${esc(r.tournaments.name)}</a><span class="mut">${fdate(r.tournaments.date)}</span>${tag(r.status)}</div>`).join('') || '<p class="mut">Todavía no te inscribiste a ningún torneo.</p>'}</div></div>`;
+}
+
+// ====== PANEL ADMIN ======
+async function viewAdmin(){
+  if (!isAdmin()) { app.innerHTML = '<div class="card">Esta sección es solo para administradores.</div>'; return; }
+  const tabs = [['torneos','Torneos'],['inscripciones','Inscripciones'],['pagos','Pagos']];
+  let body = '';
+  if (adminTab === 'torneos') body = await adminTournaments();
+  else if (adminTab === 'inscripciones') body = await adminRegs();
+  else body = await adminPayments();
+  app.innerHTML = `<h1>Panel de administración</h1><div class="tabs">${tabs.map(([k, l]) => `<button class="${adminTab === k ? '' : 'alt'}" onclick="adminTab='${k}';route()">${l}</button>`).join('')}</div>${body}`;
+}
+async function adminTournaments(){
+  const { data } = await sb.from('tournaments').select('*').order('created_at', { ascending: false });
+  return `<div class="card"><h3 style="margin-bottom:10px">Crear torneo</h3><form onsubmit="createT(event)">
+    <div class="two"><label>Nombre<input name="name" required></label><label>Juego<input name="game" required placeholder="Clash Royale"></label></div>
+    <div class="two"><label>Fecha<input type="date" name="date" required></label><label>Hora<input type="time" name="time"></label></div>
+    <div class="two"><label>Premio<input name="prize"></label><label>Cupos (0 = sin límite)<input type="number" name="slots" value="32" min="0"></label></div>
+    <div class="two"><label>Precio en ARS (0 = gratis)<input type="number" name="price" value="0" min="0"></label><label>Estado<select name="status">${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${k === 'open' ? 'selected' : ''}>${v}</option>`).join('')}</select></label></div>
+    <label>Información<textarea name="info" rows="2"></textarea></label><label>Reglas<textarea name="rules" rows="3"></textarea></label>
+    <label class="row"><input type="checkbox" name="pub" style="width:auto" checked> Publicar ahora</label><button>Crear torneo</button></form></div>
+    <div class="card scroll" style="margin-top:14px"><table><tr><th>Torneo</th><th>Estado</th><th>Publicado</th><th></th></tr>
+    ${(data || []).map(t => `<tr><td><a href="#/torneo/${t.id}">${esc(t.name)}</a><div class="mut">${esc(t.game)} · ${fdate(t.date)}</div></td>
+    <td><select onchange="setT('${t.id}',{status:this.value})">${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+    <td><button class="alt" onclick="setT('${t.id}',{is_published:${!t.is_published}})">${t.is_published ? 'Sí · ocultar' : 'No · publicar'}</button></td>
+    <td><button class="del" onclick="delT('${t.id}')">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="4" class="mut">Todavía no creaste torneos.</td></tr>'}</table></div>`;
+}
+async function createT(e){
+  e.preventDefault(); const f = new FormData(e.target), slots = +f.get('slots') || 0, price = +f.get('price') || 0;
+  const { error } = await sb.from('tournaments').insert({ name: f.get('name'), game: f.get('game'), date: f.get('date'), time: f.get('time') || '', prize: f.get('prize') || '',
+    total_slots: slots, available_slots: slots, price, is_free: price === 0, status: f.get('status'), info: f.get('info') || '', rules: f.get('rules') || '', is_published: f.get('pub') === 'on' });
+  if (error) return toast(error.message);
+  toast('Torneo creado'); route();
+}
+async function setT(id, patch){ const { error } = await sb.from('tournaments').update(patch).eq('id', id); if (error) return toast(error.message); route(); }
+async function delT(id){
+  if (!confirm('¿Eliminar este torneo? Se borran también sus inscripciones, pagos y partidos.')) return;
+  const { error } = await sb.from('tournaments').delete().eq('id', id); if (error) return toast(error.message); route();
+}
+async function adminRegs(){
+  const { data } = await sb.from('registrations').select('*,tournaments(name)').order('created_at', { ascending: false }).limit(200);
+  return `<div class="card scroll"><table><tr><th>Jugador</th><th>Torneo</th><th>Celular</th><th>Estado</th><th></th></tr>
+  ${(data || []).map(r => `<tr><td>${esc(r.name)}<div class="mut">${esc(r.nick)}</div></td><td>${esc(r.tournaments?.name)}</td><td>${esc(r.phone)}</td><td>${tag(r.status)}</td>
+  <td class="row"><button onclick="setReg('${r.id}','confirmed')">Confirmar</button><button class="alt" onclick="setReg('${r.id}','rejected')">Rechazar</button></td></tr>`).join('') || '<tr><td colspan="5" class="mut">No hay inscripciones.</td></tr>'}</table></div>`;
+}
+async function setReg(id, status){
+  const r1 = await sb.from('registrations').update({ status }).eq('id', id); if (r1.error) return toast(r1.error.message);
+  await sb.from('participants').update({ status: status === 'confirmed' ? 'active' : 'rejected' }).eq('registration_id', id);
+  route();
+}
+async function adminPayments(){
+  const { data } = await sb.from('payments').select('*,tournaments(name)').order('created_at', { ascending: false }).limit(200);
+  return `<div class="card scroll"><table><tr><th>Jugador</th><th>Torneo</th><th>Importe</th><th>Comprobante</th><th>Estado</th><th></th></tr>
+  ${(data || []).map(p => `<tr><td>${esc(p.player_name)}</td><td>${esc(p.tournaments?.name)}</td><td>$${p.amount}</td><td><button class="alt" onclick="viewReceipt('${esc(p.receipt_path)}')">Ver</button></td><td>${tag(p.status)}</td>
+  <td class="row">${p.status === 'pending' ? `<button onclick="payAct('approve_payment','${p.id}')">Aprobar</button><button class="alt" onclick="payAct('reject_payment','${p.id}')">Rechazar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="mut">No hay pagos.</td></tr>'}</table></div>`;
+}
+async function payAct(fn, id){ const { error } = await sb.rpc(fn, { p_payment_id: id }); if (error) return toast(error.message); toast('Listo'); route(); }
+async function viewReceipt(path){
+  const { data, error } = await sb.storage.from('receipts').createSignedUrl(path, 60);
+  if (error) return toast(error.message); window.open(data.signedUrl, '_blank');
+}
+
+window.addEventListener('hashchange', route);
+sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; profile = null; } });
+loadMe().then(route);
+</script>
+</body>
+</html>
