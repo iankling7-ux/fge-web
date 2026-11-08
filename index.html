@@ -308,7 +308,7 @@ async function viewReceipt(path){
 // ====== V2: diseño FGE, publicidad y páginas nuevas (redefine funciones anteriores) ======
 // Rangos: Oro (desde 20.000) y Platino (25.000) salen de tu perfil; el resto son valores a ajustar.
 const RANKS = [['Novato',0,'#94a3b8'],['Bronce',5000,'#c08457'],['Plata',12000,'#cbd5e1'],['Oro',20000,'#fbbf24'],['Platino',25000,'#67e8f9'],['Diamante',35000,'#60a5fa'],['Maestro',50000,'#c084fc'],['Mega Maestro',75000,'#f472b6']];
-const rbadge = e => { const r = [...RANKS].reverse().find(x => (e || 0) >= x[1]) || RANKS[0]; return `<span class="rk" style="color:${r[2]};border-color:${r[2]}66">${r[0]}</span>`; };
+const rbadge = e => rankChip(e);
 let sponsors = [], cfg = null, navCount = 0;
 const isPlus = () => !!(profile && profile.plus_until && new Date(profile.plus_until) > new Date());
 const showAds = () => !isPlus() && sponsors.length > 0;
@@ -694,6 +694,113 @@ async function saveCfg(e){
   e.preventDefault(); const f = new FormData(e.target);
   const { error } = await sb.from('app_settings').upsert(CFG.map(([k]) => ({ key: k, value: f.get(k) || '', is_public: true })));
   if (error) return toast(error.message); cfg = null; toast('Configuración guardada'); route();
+}
+
+// ====== V5: vista previa, rangos con emblema, perfiles públicos e inventario ======
+CATS.push(['item', 'Objetos y colecciones']);
+document.head.insertAdjacentHTML('beforeend', '<style>.inv{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}.inv .card{padding:8px;text-align:center}.inv .art{height:64px;font-size:30px}.leg{display:flex;flex-wrap:wrap;gap:12px;margin:8px 0 14px}.leg div{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)}.pvh{display:flex;gap:8px;justify-content:center;margin-top:10px}a.lk{color:inherit}</style>');
+const RICON = ['🌱','🥉','🥈','🥇','💠','💎','👑','🔥'];
+const RDESC = ['Recién llegás a la arena','Primeros pasos competitivos','Jugador constante','Nivel alto de la comunidad','Élite de la comunidad','Pocos llegan hasta acá','Referente de FGE','Leyenda de FastGame'];
+const rIdx = e => RANKS.filter(r => (e || 0) >= r[1]).length - 1;
+function emblem(e, s = 40){
+  const i = rIdx(e), c = RANKS[i][2];
+  return `<svg width="${s}" height="${s}" viewBox="0 0 64 68" role="img" aria-label="${RANKS[i][0]}"><defs><linearGradient id="rg${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="#0b1730"/></linearGradient></defs><path d="M32 3 L59 13 V34 C59 49 47 59 32 65 C17 59 5 49 5 34 V13 Z" fill="url(#rg${i})" stroke="${c}" stroke-width="3"/><path d="M32 9 L53 17 V34 C53 45 44 53 32 58 C20 53 11 45 11 34 V17 Z" fill="none" stroke="#fff" stroke-opacity=".3"/><text x="32" y="40" text-anchor="middle" font-size="24">${RICON[i]}</text></svg>`;
+}
+function rankChip(e){ const i = rIdx(e), r = RANKS[i]; return `<span class="rk" title="${esc(RDESC[i])}" style="color:${r[2]};border-color:${r[2]}66;display:inline-flex;align-items:center;gap:4px">${emblem(e, 18)}${r[0]}</span>`; }
+function art(i){
+  const v = i.value || '', img = isUrl(v) ? `<img src="${esc(v)}" alt="">` : esc(v);
+  if (i.category === 'avatar' || i.category === 'item' || i.category === 'badge') return `<div class="art">${img}</div>`;
+  if (i.category === 'frame') return `<div class="art"><div class="avc" style="border-color:${esc(v)}">🙂</div></div>`;
+  if (i.category === 'color') return `<div class="art"><b style="color:${esc(v)};font-size:22px">Tu nick</b></div>`;
+  return `<div class="art" style="background:${isUrl(v) ? `url(${esc(v)}) center/cover` : esc(v)}"></div>`;
+}
+function profCard(p, items, ov){
+  const eq = { ...(p.equipped || {}) }; if (ov) eq[ov.category] = ov.id;
+  const by = id => ov && ov.id === id ? ov : items.find(x => x.id === id);
+  const av = by(eq.avatar), fr = by(eq.frame), co = by(eq.color), bg = by(eq.background), bd = by(eq.badge), ob = by(eq.item);
+  const bgv = (ov?.category === 'background' ? ov.value : (p.banner_url || bg?.value)) || 'linear-gradient(135deg,#1e293b,#0f172a)';
+  const avv = ov?.category === 'avatar' ? ov.value : (p.avatar_url || av?.value);
+  const avh = avv ? (isUrl(avv) ? `<img class="pimg" src="${esc(avv)}" alt="">` : esc(avv)) : esc(p.nick[0].toUpperCase());
+  const plus = p.plus_until && new Date(p.plus_until) > new Date();
+  return `<div class="card" style="padding:0;overflow:hidden"><div style="height:110px;background:${isUrl(bgv) ? `url(${esc(bgv)}) center/cover` : esc(bgv)}"></div><div class="row" style="padding:0 16px 16px;margin-top:-40px"><div class="avc big" style="border-color:${esc(fr?.value || '#1d3358')}">${avh}</div><div style="flex:1"><h2 style="color:${esc(co?.value || '#fff')}">${esc(p.nick)} ${bd ? esc(bd.value) : ''} ${ob ? `<span title="${esc(ob.name)}">${isUrl(ob.value) ? `<img src="${esc(ob.value)}" alt="" style="height:24px;vertical-align:middle">` : esc(ob.value)}</span>` : ''}</h2><div class="row">${rankChip(p.elo_points)}${plus ? '<span class="tag">PLUS</span>' : ''}<span class="mut">${esc(p.name)}</span></div></div>${emblem(p.elo_points, 64)}</div></div>`;
+}
+function invHtml(list, eq, mine){
+  if (!list.length) return '<p class="mut">Todavía no tiene ítems.</p>';
+  return CATS.map(([k, l]) => { const g = list.filter(i => i.category === k); if (!g.length) return '';
+    return `<h4 class="mut" style="margin:12px 0 6px">${l} (${g.length})</h4><div class="inv">${g.map(i => { const r = RAR[i.rarity] || RAR.common, on = eq[k] === i.id;
+      return `<div class="card" style="border-color:${r[1]}${on ? '' : '66'}">${art(i)}<div style="font-size:13px"><b>${esc(i.name)}</b></div><div style="font-size:11px;color:${r[1]};margin-bottom:6px">${r[0]}</div>${mine ? (on ? `<button class="alt" onclick="rpc('unequip_item',{p_cat:'${k}'})">Quitar</button>` : `<button onclick="rpc('equip_item',{p_item:'${i.id}'},'Equipado')">Equipar</button>`) : (on ? '<span class="tag ok">Equipado</span>' : '')}</div>`; }).join('')}</div>`; }).join('');
+}
+const ownedOf = (inv, items) => (inv || []).map(x => items.find(i => i.id === x.item_id)).filter(Boolean);
+const worth = l => l.reduce((s, i) => s + Number(i.price || 0), 0);
+function previewItem(id){
+  const it = window._items.find(x => x.id === id), d = document.createElement('div'); d.className = 'pop';
+  d.innerHTML = `<div class="card stack" style="max-width:520px;width:100%"><h3>Vista previa: ${esc(it.name)}</h3>${me ? profCard(profile, window._items, it) : '<p class="mut">Ingresá para ver cómo te queda en tu perfil.</p>'}<div class="pvh"><button class="alt" onclick="this.closest('.pop').remove()">Cerrar</button>${me && !window._own.has(id) ? `<button onclick="this.closest('.pop').remove();rpc('buy_item',{p_item:'${id}'},'¡Comprado!')">Comprar · 🪙 ${cf(it.price)}</button>` : ''}</div></div>`;
+  document.body.appendChild(d);
+}
+async function viewShop(){
+  const [it, inv] = await Promise.all([sb.from('shop_items').select('*').eq('is_active', true).order('price'), me ? sb.from('inventory').select('item_id').eq('user_id', me.id) : Promise.resolve({ data: [] })]);
+  window._items = it.data || []; window._own = new Set((inv.data || []).map(x => x.item_id)); const eq = profile?.equipped || {};
+  const list = window._items.filter(i => i.category === shopCat);
+  app.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Tienda FGE</h1>${me ? `<span class="tag warn">🪙 ${cf(profile?.coins)}</span>` : ''}</div><p class="mut" style="margin:4px 0 12px">Probá cómo te queda cada ítem con <b>Vista previa</b> antes de comprarlo. Las Monedas FGE no valen dinero: se ganan en la <a href="#/arena">Arena</a>.</p>${adBox()}
+    <div class="tabs" style="flex-wrap:wrap">${CATS.map(([k, l]) => `<button class="${shopCat === k ? '' : 'alt'}" onclick="shopCat='${k}';route()">${l}</button>`).join('')}</div>
+    <div class="grid">${list.map(i => { const r = RAR[i.rarity] || RAR.common, has = window._own.has(i.id);
+      const btn = has ? (eq[i.category] === i.id ? `<button class="alt" onclick="rpc('unequip_item',{p_cat:'${i.category}'})">Quitar</button>` : `<button onclick="rpc('equip_item',{p_item:'${i.id}'},'Equipado')">Equipar</button>`) : `<button onclick="${me ? `rpc('buy_item',{p_item:'${i.id}'},'¡Comprado!')` : `location.hash='#/login'`}">Comprar</button>`;
+      return `<div class="card" style="border-color:${r[1]}88">${art(i)}<div class="row" style="justify-content:space-between;margin-top:8px"><b>${esc(i.name)}</b><span style="color:${r[1]};font-size:13px">${r[0]}</span></div>${i.plus_only ? '<span class="tag">Requiere Plus</span>' : ''}<div class="row" style="justify-content:space-between;margin-top:8px"><b style="color:var(--warn)">🪙 ${cf(i.price)}</b><span class="row"><button class="alt" onclick="previewItem('${i.id}')">Vista previa</button>${btn}</span></div></div>`; }).join('') || '<div class="card mut">Todavía no hay ítems en esta categoría.</div>'}</div>`;
+}
+function rankBlock(p){
+  const e = p.elo_points, i = rIdx(e), nx = RANKS[i + 1];
+  return `<div class="card"><div class="row" style="gap:14px">${emblem(e, 72)}<div style="flex:1"><h3>${RANKS[i][0]} <span class="mut" style="font-size:13px">· rango ${i + 1} de ${RANKS.length}</span></h3><div class="mut">${RDESC[i]}</div>${nx ? `<div class="pbar" style="margin-top:8px"><i style="width:${Math.min(100, (e - RANKS[i][1]) / (nx[1] - RANKS[i][1]) * 100)}%"></i></div><div class="mut" style="font-size:12px;margin-top:4px">${cf(nx[1] - e)} ELO para ${nx[0]}</div>` : '<div class="mut">Alcanzaste el rango máximo.</div>'}</div></div></div>`;
+}
+function statsRow(p, l){
+  return `<div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr))"><div class="card stat"><b>${cf(p.elo_points)}</b><span class="mut">ELO</span></div><div class="card stat"><b>${p.wins}/${p.losses}</b><span class="mut">V / D</span></div><div class="card stat"><b>${p.tournaments_won}</b><span class="mut">Torneos ganados</span></div><div class="card stat"><b>${l.length}</b><span class="mut">Ítems</span></div><div class="card stat"><b>🪙 ${cf(worth(l))}</b><span class="mut">Valor del inventario</span></div></div>`;
+}
+async function viewPlayer(id){
+  const [pr, it, inv] = await Promise.all([sb.from('profiles').select('*').eq('id', id).maybeSingle(), sb.from('shop_items').select('*'), sb.from('inventory').select('item_id').eq('user_id', id)]);
+  const p = pr.data; if (!p) { app.innerHTML = '<div class="card">No encontramos a ese jugador.</div>'; return; }
+  const l = ownedOf(inv.data, it.data || []);
+  app.innerHTML = `<div class="stack"><a href="#/ranking">← Ranking</a>${profCard(p, it.data || [])}${statsRow(p, l)}${rankBlock(p)}${adBox()}<div class="card"><h3>Inventario</h3>${invHtml(l, p.equipped || {}, false)}</div></div>`;
+}
+async function viewProfile(){
+  if (!me || !profile) { location.hash = '#/login'; return; }
+  const [it, inv, regs, nh] = await Promise.all([sb.from('shop_items').select('*'), sb.from('inventory').select('item_id').eq('user_id', me.id), sb.from('registrations').select('status,tournaments(id,name,date)').eq('user_id', me.id).order('created_at', { ascending: false }), sb.from('name_history').select('*').eq('user_id', me.id).order('created_at', { ascending: false }).limit(10)]);
+  const l = ownedOf(inv.data, it.data || []);
+  app.innerHTML = `<div class="stack">${profCard(profile, it.data || [])}${statsRow(profile, l)}<div class="card row" style="justify-content:space-between"><span>🪙 Monedas FGE: <b>${cf(profile.coins)}</b></span><a href="#/jugador/${me.id}" class="mut">Así te ven los demás</a></div>${rankBlock(profile)}
+    <div class="card"><h3>Mi inventario</h3><p class="mut">Equipá o quitá tus ítems desde acá. Los demás jugadores ven tu colección en tu perfil. Conseguí más en la <a href="#/tienda">Tienda</a>.</p>${invHtml(l, profile.equipped || {}, true)}</div>
+    <div class="card"><h3 style="margin-bottom:10px">Personalizar perfil</h3><div class="two"><label>Foto de perfil (PNG, JPG, WebP o GIF, hasta 3 MB)<input type="file" accept="image/*" onchange="setImg('avatar',this)"></label><label>Imagen de fondo / banner<input type="file" accept="image/*" onchange="setImg('banner',this)"></label></div><div class="row" style="margin-top:8px">${profile.avatar_url ? '<button class="alt" onclick="clearImg(\'avatar\')">Quitar mi foto</button>' : ''}${profile.banner_url ? '<button class="alt" onclick="clearImg(\'banner\')">Quitar mi fondo</button>' : ''}</div>
+    <form onsubmit="saveProfile(event)" style="margin-top:12px"><div class="two"><label>Nick<input name="nick" value="${esc(profile.nick)}" required maxlength="20"></label><label>Nombre<input name="name" value="${esc(profile.name)}"></label></div><button>Guardar cambios</button></form></div>
+    <div class="card"><h3 style="margin-bottom:8px">Historial de nombres</h3>${(nh.data || []).map(n => `<div class="row mut" style="padding:3px 0"><b style="color:var(--tx)">${esc(n.old_nick)}</b> → <b style="color:var(--tx)">${esc(n.new_nick)}</b><span>${new Date(n.created_at).toLocaleDateString('es-AR')}</span></div>`).join('') || '<p class="mut">Todavía no cambiaste tu nombre.</p>'}</div>
+    <div class="card"><h3 style="margin-bottom:8px">Plan actual</h3>${isPlus() ? `Plus · activo hasta ${fdate(profile.plus_until.slice(0, 10))}` : 'Free · <a href="#/plus">Conocé FastGame Plus</a>'}</div>
+    <div class="card"><h3 style="margin-bottom:8px">Mis inscripciones</h3>${(regs.data || []).map(r => `<div class="row" style="padding:6px 0"><a href="#/torneo/${r.tournaments.id}">${esc(r.tournaments.name)}</a><span class="mut">${fdate(r.tournaments.date)}</span>${tag(r.status)}</div>`).join('') || '<p class="mut">Todavía no te inscribiste a ningún torneo.</p>'}</div></div>`;
+}
+async function viewRanking(){
+  const { data, error } = await sb.from('profiles').select('id,nick,elo_points,wins,losses,tournaments_won').eq('account_status', 'active').order('elo_points', { ascending: false }).limit(100);
+  if (error) throw error;
+  app.innerHTML = `<h1>Ranking FGE</h1><p class="mut">Los mejores jugadores de la comunidad. Tocá un nombre para ver su perfil y su colección.</p><div class="leg">${RANKS.map((r, i) => `<div title="${esc(RDESC[i])}">${emblem(r[1], 28)}<span>${r[0]}<br>${cf(r[1])}+</span></div>`).join('')}</div>${adBox()}<div class="card scroll"><table><tr><th>#</th><th>Jugador</th><th>Rango</th><th>ELO</th><th>V / D</th><th>Torneos</th></tr>${(data || []).map((p, i) => `<tr><td class="pos">${i + 1}</td><td><a class="lk" href="#/jugador/${p.id}"><b>${esc(p.nick)}</b></a></td><td>${rbadge(p.elo_points)}</td><td><b>${cf(p.elo_points)}</b></td><td>${p.wins} / ${p.losses}</td><td>${p.tournaments_won}</td></tr>`).join('') || '<tr><td colspan="6" class="mut">Todavía no hay jugadores.</td></tr>'}</table></div>`;
+}
+async function viewPlayers(){
+  const { data } = await sb.from('profiles').select('id,nick,elo_points,avatar_url').eq('account_status', 'active').order('elo_points', { ascending: false });
+  window._pl = data || [];
+  app.innerHTML = `<h1 style="margin-bottom:12px">Jugadores</h1><input id="ps" placeholder="Buscar por nick..." oninput="fPlayers()" style="max-width:320px;margin-bottom:14px">${adBox()}<div class="grid" id="pl"></div>`; fPlayers();
+}
+function fPlayers(){ const q = document.getElementById('ps').value.toLowerCase(); document.getElementById('pl').innerHTML = window._pl.filter(p => p.nick.toLowerCase().includes(q)).map(p => `<a href="#/jugador/${p.id}" class="card row" style="justify-content:space-between">${emblem(p.elo_points, 32)}<b style="flex:1">${esc(p.nick)}</b><span style="color:var(--cy)">${cf(p.elo_points)}</span></a>`).join('') || '<div class="card mut">No encontramos jugadores.</div>'; }
+async function route(){
+  await loadCfg(); header();
+  const h = location.hash || '#/';
+  try {
+    if (h.startsWith('#/torneo/')) await viewTournament(h.split('/')[2]);
+    else if (h.startsWith('#/jugador/')) await viewPlayer(h.split('/')[2]);
+    else if (h === '#/torneos') await viewTorneos();
+    else if (h === '#/ranking') await viewRanking();
+    else if (h === '#/jugadores') await viewPlayers();
+    else if (h === '#/plus') await viewPlus();
+    else if (h === '#/tienda') await viewShop();
+    else if (h === '#/arena') await viewArena();
+    else if (h === '#/login') viewLogin();
+    else if (h === '#/perfil') await viewProfile();
+    else if (h === '#/admin') await viewAdmin();
+    else await viewHome();
+  } catch (e) { app.innerHTML = `<div class="card"><h3>Algo salió mal</h3><p class="mut">${esc(e.message)}</p></div>`; }
+  footer(); adExtras(); window.scrollTo(0, 0);
 }
 
 window.addEventListener('hashchange', route);
