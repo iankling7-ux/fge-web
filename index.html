@@ -2,7 +2,8 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07101f">
 <title>FastGame Esports | Torneos de juegos móviles y PC</title>
 <meta name="description" content="Torneos de Clash Royale y más juegos móviles y de PC. Inscribite, competí y subí en el ranking de FastGame Esports.">
 <meta property="og:title" content="FastGame Esports">
@@ -52,6 +53,45 @@ footer{border-top:1px solid var(--line);padding:24px 20px 100px;color:var(--mut)
 .side+.side{border-top:1px solid var(--line)}.win{color:var(--ok);font-weight:600}.m .ctl{display:flex;gap:4px;padding:6px;border-top:1px solid var(--line)}.m input{width:46px;padding:4px 6px}
 @media(max-width:520px){.two{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+/* ===== V7: móvil primero + admin ===== */
+html{-webkit-text-size-adjust:100%}
+body{overflow-x:hidden;-webkit-tap-highlight-color:transparent}
+button,.btn,a,select,label{touch-action:manipulation}
+img{max-width:100%}
+.mb{display:none;min-width:44px;padding:8px 12px;font-size:20px;line-height:1;align-items:center;justify-content:center}
+header{padding-top:max(12px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+.adsticky{padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+#toast{bottom:calc(90px + env(safe-area-inset-bottom));max-width:92vw;text-align:center}
+.wheel{max-width:100%;height:auto}.pop{overflow-y:auto}
+.mdl{position:fixed;inset:0;background:#000b;z-index:30;overflow-y:auto;padding:max(12px,env(safe-area-inset-top)) 12px 28px;display:flex;justify-content:center;align-items:flex-start}
+.mdlc{width:100%;max-width:560px;margin:auto 0}
+.dz{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.dz p{margin:2px 0 0}
+@media(min-width:1100px){main{max-width:1120px}}
+@media(max-width:860px){
+  header{gap:6px 10px}.mb{display:inline-flex}
+  header nav{display:none;width:100%;flex-direction:column;gap:0;padding-top:6px;border-top:1px solid var(--line)}
+  header.open nav{display:flex}
+  header nav a{padding:13px 4px;font-size:16px;border-bottom:1px solid var(--line)}
+  main{padding:16px 14px 120px}
+  .hero2{padding:28px 0 18px}.stats{gap:8px}.stat b{font-size:24px}
+  .tabs{overflow-x:auto;flex-wrap:nowrap!important;padding-bottom:6px;scrollbar-width:none}.tabs button{flex:none}
+  .br{scroll-snap-type:x proximity}.col{min-width:78vw;scroll-snap-align:start}
+  input,select,textarea{font-size:16px}
+  button,.btn{min-height:44px}
+}
+@media(max-width:700px){
+  .adm .card.scroll{background:none;border:0;padding:0}
+  .adm table,.adm tbody,.adm tr,.adm td{display:block;width:100%}
+  .adm tr.hd{display:none}
+  .adm tr{border:1px solid var(--line);border-radius:10px;margin:0 0 10px;padding:6px 12px;background:var(--panel)}
+  .adm td{border:0;padding:6px 0;display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:right}
+  .adm td::before{content:attr(data-l);color:var(--mut);font-size:12px;text-align:left;flex:none}
+  .adm td[data-l=""]::before,.adm td.row::before{display:none}
+  .adm td.row{justify-content:flex-start;text-align:left}
+  .adm td.row button{flex:1 1 auto}
+  .adm td select{width:auto;max-width:60%}
+}
 </style>
 </head>
 <body>
@@ -873,6 +913,224 @@ async function addCode(e){
 async function setCode(c, v){ await sb.from('codes').update({ is_active: v }).eq('code', c); route(); }
 async function delCode(c){ if (confirm('¿Eliminar este código?')) { await sb.from('codes').delete().eq('code', c); route(); } }
 function grantItem(e){ e.preventDefault(); const f = new FormData(e.target); adm('admin_grant_item', { p_user: f.get('u'), p_item: f.get('i') }, 'Ítem regalado'); }
+
+
+// ====== V7: administración completa (editar y borrar) + optimización móvil ======
+const A = { t: {}, i: {}, s: {}, u: {} };
+function mdl(title, html){
+  closeMdl(); const d = document.createElement('div'); d.className = 'mdl'; d.id = 'mdl';
+  d.innerHTML = `<div class="mdlc card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3>${esc(title)}</h3><button class="alt" type="button" onclick="closeMdl()" aria-label="Cerrar">✕</button></div>${html}</div>`;
+  d.addEventListener('click', e => { if (e.target === d) closeMdl(); });
+  document.body.appendChild(d); document.body.style.overflow = 'hidden';
+}
+function closeMdl(){ document.getElementById('mdl')?.remove(); document.body.style.overflow = ''; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMdl(); });
+
+const NOPERM = 'No se pudo: tu usuario admin no tiene permiso en esa tabla (revisá las políticas RLS en Supabase)';
+async function dbUpd(table, patch, col, val, ok){
+  const { data, error } = await sb.from(table).update(patch).eq(col, val).select();
+  if (error) { toast(error.message); return false; }
+  if (!data || !data.length) { toast(NOPERM); return false; }
+  if (ok) toast(ok); return true;
+}
+async function dbDel(table, col, val, ok){
+  const { data, error } = await sb.from(table).delete().eq(col, val).select();
+  if (error) { toast(error.message); return false; }
+  if (!data || !data.length) { toast(NOPERM); return false; }
+  if (ok) toast(ok); return true;
+}
+async function purge(table, col, label, filt){
+  if (!confirm(`¿Borrar ${label}? No se puede deshacer.`)) return;
+  let q = sb.from(table).delete({ count: 'exact' }).not(col, 'is', null); if (filt) q = filt(q);
+  const { count, error } = await q; if (error) return toast(error.message);
+  toast(count ? `Se borraron ${count} registros` : 'No había nada para borrar (o faltan permisos)'); cfg = null; route();
+}
+
+// ---- Torneos: crear / editar / borrar ----
+const tForm = (t, handler) => { const v = t || {};
+  return `<form onsubmit="${handler}">
+  <div class="two"><label>Nombre<input name="name" required value="${esc(v.name)}"></label><label>Juego<input name="game" required list="gl" value="${esc(v.game)}" placeholder="Clash Royale"></label></div>
+  <datalist id="gl">${[...new Set(Object.values(A.t).map(x => x.game).filter(Boolean))].map(g => `<option value="${esc(g)}">`).join('')}</datalist>
+  <div class="two"><label>Fecha<input type="date" name="date" required value="${esc(v.date)}"></label><label>Hora<input type="time" name="time" value="${esc(v.time)}"></label></div>
+  <div class="two"><label>Premio<input name="prize" value="${esc(v.prize)}"></label><label>Cupos totales (0 = sin límite)<input type="number" name="slots" min="0" value="${v.total_slots ?? 32}"></label></div>
+  ${t ? `<label>Cupos libres ahora<input type="number" name="avail" min="0" value="${v.available_slots ?? 0}"></label>` : ''}
+  <div class="two"><label>Precio en ARS (0 = gratis)<input type="number" name="price" min="0" value="${v.price ?? 0}"></label><label>Estado<select name="status">${Object.entries(ST).map(([k, x]) => `<option value="${k}" ${(v.status || 'open') === k ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>
+  <label>Información<textarea name="info" rows="2">${esc(v.info)}</textarea></label><label>Reglas<textarea name="rules" rows="3">${esc(v.rules)}</textarea></label>
+  <label class="row"><input type="checkbox" name="pub" style="width:auto" ${t ? (v.is_published ? 'checked' : '') : 'checked'}> Publicado</label><button>${t ? 'Guardar cambios' : 'Crear torneo'}</button></form>`; };
+async function adminTournaments(){
+  const { data } = await sb.from('tournaments').select('*').order('created_at', { ascending: false });
+  A.t = {}; (data || []).forEach(t => A.t[t.id] = t);
+  return `<div class="card"><h3 style="margin-bottom:10px">Crear torneo</h3>${tForm(null, 'createT(event)')}</div>
+  <div class="card scroll" style="margin-top:14px"><table><tr><th>Torneo</th><th>Estado</th><th>Publicado</th><th></th></tr>
+  ${(data || []).map(t => `<tr><td><a href="#/torneo/${t.id}">${esc(t.name)}</a><div class="mut">${esc(t.game)} · ${fdate(t.date)}</div></td>
+  <td><select onchange="setT('${t.id}',{status:this.value})">${Object.entries(ST).map(([k, v]) => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+  <td><button class="alt" onclick="setT('${t.id}',{is_published:${!t.is_published}})">${t.is_published ? 'Sí · ocultar' : 'No · publicar'}</button></td>
+  <td class="row"><button onclick="editT('${t.id}')">Editar</button><button class="alt" onclick="clearBracket('${t.id}')">Borrar llaves</button><button class="del" onclick="delT('${t.id}')">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="4" class="mut">Todavía no creaste torneos.</td></tr>'}</table></div>`;
+}
+function editT(id){ mdl('Editar torneo', tForm(A.t[id], `saveT(event,'${id}')`)); }
+async function saveT(e, id){
+  e.preventDefault(); const f = new FormData(e.target), slots = +f.get('slots') || 0, price = +f.get('price') || 0;
+  const ok = await dbUpd('tournaments', { name: f.get('name'), game: f.get('game'), date: f.get('date'), time: f.get('time') || '', prize: f.get('prize') || '',
+    total_slots: slots, available_slots: slots ? Math.min(slots, +f.get('avail') || 0) : 0, price, is_free: price === 0, status: f.get('status'),
+    info: f.get('info') || '', rules: f.get('rules') || '', is_published: f.get('pub') === 'on' }, 'id', id, 'Torneo actualizado');
+  if (ok) { closeMdl(); route(); }
+}
+async function setT(id, patch){ if (await dbUpd('tournaments', patch, 'id', id)) route(); }
+async function delT(id){
+  if (!confirm('¿Eliminar este torneo? Se borran también sus inscripciones, pagos y partidos.')) return;
+  if (await dbDel('tournaments', 'id', id, 'Torneo eliminado')) route();
+}
+async function clearBracket(id){
+  if (!confirm('¿Borrar todas las llaves y resultados de este torneo?')) return;
+  const { error } = await sb.from('matches').delete().eq('tournament_id', id); if (error) return toast(error.message);
+  toast('Llaves borradas'); route();
+}
+
+// ---- Inscripciones, pagos y Plus: ahora también se pueden borrar ----
+async function adminRegs(){
+  const { data } = await sb.from('registrations').select('*,tournaments(name)').order('created_at', { ascending: false }).limit(200);
+  return `<div class="card scroll"><table><tr><th>Jugador</th><th>Torneo</th><th>Celular</th><th>Estado</th><th></th></tr>
+  ${(data || []).map(r => `<tr><td>${esc(r.name)}<div class="mut">${esc(r.nick)}</div></td><td>${esc(r.tournaments?.name)}</td><td>${esc(r.phone)}</td><td>${tag(r.status)}</td>
+  <td class="row"><button onclick="setReg('${r.id}','confirmed')">Confirmar</button><button class="alt" onclick="setReg('${r.id}','rejected')">Rechazar</button><button class="del" onclick="delReg('${r.id}')">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="5" class="mut">No hay inscripciones.</td></tr>'}</table></div>`;
+}
+async function delReg(id){
+  if (!confirm('¿Eliminar esta inscripción junto con su pago y su lugar en el torneo?')) return;
+  await sb.from('payments').delete().eq('registration_id', id); await sb.from('participants').delete().eq('registration_id', id);
+  if (await dbDel('registrations', 'id', id, 'Inscripción eliminada')) route();
+}
+async function adminPayments(){
+  const { data } = await sb.from('payments').select('*,tournaments(name)').order('created_at', { ascending: false }).limit(200);
+  return `<div class="card scroll"><table><tr><th>Jugador</th><th>Torneo</th><th>Importe</th><th>Comprobante</th><th>Estado</th><th></th></tr>
+  ${(data || []).map(p => `<tr><td>${esc(p.player_name)}</td><td>${esc(p.tournaments?.name)}</td><td>$${p.amount}</td><td><button class="alt" onclick="viewReceipt('${esc(p.receipt_path)}')">Ver</button></td><td>${tag(p.status)}</td>
+  <td class="row">${p.status === 'pending' ? `<button onclick="payAct('approve_payment','${p.id}')">Aprobar</button><button class="alt" onclick="payAct('reject_payment','${p.id}')">Rechazar</button>` : ''}<button class="del" onclick="delRow('payments','${p.id}','este pago')">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="6" class="mut">No hay pagos.</td></tr>'}</table></div>`;
+}
+async function delRow(table, id, what){ if (!confirm(`¿Eliminar ${what}?`)) return; if (await dbDel(table, 'id', id, 'Eliminado')) route(); }
+async function adminPlus(){
+  const { data } = await sb.from('plus_requests').select('*').order('created_at', { ascending: false }).limit(200);
+  return `<div class="card scroll"><table><tr><th>Jugador</th><th>Teléfono</th><th>Comprobante</th><th>Estado</th><th></th></tr>
+  ${(data || []).map(r => `<tr><td>${esc(r.nick)}<div class="mut">${esc(r.name)}</div></td><td>${esc(r.phone)}</td><td><button class="alt" onclick="viewReceipt('${esc(r.receipt_path)}')">Ver</button></td>
+  <td>${tag(r.status)}${r.reject_reason ? `<div class="mut">${esc(r.reject_reason)}</div>` : ''}</td>
+  <td class="row">${r.status === 'pending' ? `<button onclick="adm('approve_plus_request',{p_id:'${r.id}'},'Plus activado por 30 días')">Aprobar</button><button class="alt" onclick="rejPlus('${r.id}')">Rechazar</button>` : ''}<button class="del" onclick="delRow('plus_requests','${r.id}','esta solicitud')">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="5" class="mut">No hay solicitudes de Plus.</td></tr>'}</table></div>`;
+}
+
+// ---- Usuarios / perfiles ----
+async function adminUsers(){
+  const { data } = await sb.from('profiles').select('*').order('elo_points', { ascending: false }).limit(300);
+  A.u = {}; (data || []).forEach(p => A.u[p.id] = p);
+  const ST2 = { active: 'Activo', suspended: 'Suspendido', banned: 'Baneado' };
+  return `<input placeholder="Buscar jugador por nick..." oninput="fUsers(this.value)" style="max-width:340px;margin-bottom:12px">
+  <div class="card scroll"><table><tr><th>Jugador</th><th>ELO</th><th>Monedas</th><th>Plus hasta</th><th>Estado</th><th>Acciones</th></tr>
+  ${(data || []).map(p => `<tr data-n="${esc((p.nick || '').toLowerCase())}"><td>${esc(p.nick)}<div class="mut">${p.role}</div></td><td>${p.elo_points}</td><td>${cf(p.coins)}</td><td>${p.plus_until && new Date(p.plus_until) > new Date() ? fdate(p.plus_until.slice(0, 10)) : '—'}</td>
+  <td><select onchange="adm('admin_set_status',{p_user:'${p.id}',p_status:this.value})">${Object.entries(ST2).map(([k, v]) => `<option value="${k}" ${p.account_status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+  <td class="row"><button onclick="editU('${p.id}')">Editar</button><button class="alt" onclick="admAdj('${p.id}','elo_points')">ELO ±</button><button class="alt" onclick="admAdj('${p.id}','coins')">Monedas ±</button><button class="alt" onclick="adm('admin_set_plus',{p_user:'${p.id}',p_days:30})">+30 d Plus</button><button class="alt" onclick="adm('admin_set_plus',{p_user:'${p.id}',p_days:0})">Quitar Plus</button><button class="alt" onclick="admReset('${p.id}')">Resetear</button>${p.role === 'admin' ? '' : `<button class="del" onclick="admDel('${p.id}')">Eliminar</button>`}</td></tr>`).join('')}</table></div>`;
+}
+function fUsers(v){ v = v.toLowerCase(); document.querySelectorAll('.adm tr[data-n]').forEach(tr => tr.style.display = tr.dataset.n.includes(v) ? '' : 'none'); }
+function editU(id){
+  const p = A.u[id];
+  mdl('Editar perfil · ' + p.nick, `<form onsubmit="saveU(event,'${id}')"><div class="two"><label>Nick<input name="nick" required maxlength="20" value="${esc(p.nick)}"></label><label>Nombre<input name="name" value="${esc(p.name)}"></label></div><button>Guardar</button></form>
+  <div class="row" style="margin-top:12px"><button class="alt" type="button" onclick="clearUImg('${id}','avatar_url')">Quitar foto</button><button class="alt" type="button" onclick="clearUImg('${id}','banner_url')">Quitar banner</button><button class="alt" type="button" onclick="clearUEq('${id}')">Desequipar ítems</button></div>`);
+}
+async function saveU(e, id){
+  e.preventDefault(); const f = new FormData(e.target);
+  const ok = await dbUpd('profiles', { nick: f.get('nick').trim(), name: f.get('name').trim() }, 'id', id, 'Perfil actualizado');
+  if (ok) { closeMdl(); route(); }
+}
+async function clearUImg(id, col){ if (await dbUpd('profiles', { [col]: '' }, 'id', id, 'Imagen quitada')) { closeMdl(); route(); } }
+async function clearUEq(id){ if (await dbUpd('profiles', { equipped: {} }, 'id', id, 'Ítems desequipados')) { closeMdl(); route(); } }
+
+// ---- Tienda: crear / editar / borrar ----
+async function adminShop(){
+  const { data } = await sb.from('shop_items').select('*').order('category').order('price');
+  A.i = {}; (data || []).forEach(i => A.i[i.id] = i);
+  return `<div class="card"><h3 style="margin-bottom:10px">Nuevo ítem</h3><form onsubmit="addItem(event)"><div class="two"><label>Nombre<input name="name" required></label><label>Categoría<select name="category">${CATS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label></div><div class="two"><label>Rareza<select name="rarity">${Object.entries(RAR).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select></label><label>Precio (monedas)<input type="number" name="price" min="0" value="5000"></label></div>
+  <label>Imagen o GIF animado (avatar, insignia, objeto o fondo)<input type="file" name="img" accept="image/*"></label><label>…o valor manual (emoji, color #hex para marco o nombre, gradiente CSS)<input name="value" placeholder="🐺 · #38bdf8 · linear-gradient(135deg,#38bdf8,#8b5cf6)"></label><label class="row"><input type="checkbox" name="plus" style="width:auto"> Requiere Plus</label><button>Crear ítem</button></form></div>
+  <div class="card scroll" style="margin-top:14px"><table><tr><th>Vista</th><th>Ítem</th><th>Precio</th><th>Plus</th><th></th></tr>${(data || []).map(i => `<tr><td style="width:90px">${art(i)}</td><td>${esc(i.name)}<div class="mut">${i.category} · ${(RAR[i.rarity] || RAR.common)[0]}${i.is_active ? '' : ' · oculto'}</div></td><td>${cf(i.price)}</td><td>${i.plus_only ? 'Sí' : ''}</td>
+  <td class="row"><button onclick="editI('${i.id}')">Editar</button><button class="alt" onclick="setI('${i.id}',${!i.is_active})">${i.is_active ? 'Ocultar' : 'Mostrar'}</button><button class="del" onclick="delI('${i.id}')">Eliminar</button></td></tr>`).join('')}</table></div>`;
+}
+function editI(id){
+  const i = A.i[id];
+  mdl('Editar ítem', `<form onsubmit="saveI(event,'${id}')"><div class="two"><label>Nombre<input name="name" required value="${esc(i.name)}"></label><label>Categoría<select name="category">${CATS.map(([k, l]) => `<option value="${k}" ${i.category === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+  <div class="two"><label>Rareza<select name="rarity">${Object.entries(RAR).map(([k, v]) => `<option value="${k}" ${i.rarity === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></label><label>Precio (monedas)<input type="number" name="price" min="0" value="${i.price || 0}"></label></div>
+  <label>Valor actual (emoji, #hex, gradiente o URL)<input name="value" value="${esc(i.value)}"></label><label>Reemplazar por una imagen o GIF nuevo<input type="file" name="img" accept="image/*"></label>
+  <label class="row"><input type="checkbox" name="plus" style="width:auto" ${i.plus_only ? 'checked' : ''}> Requiere Plus</label><label class="row"><input type="checkbox" name="act" style="width:auto" ${i.is_active ? 'checked' : ''}> Visible en la tienda</label><button>Guardar cambios</button></form>`);
+}
+async function saveI(e, id){
+  e.preventDefault(); const f = new FormData(e.target); let value = f.get('value') || '';
+  const file = f.get('img'); if (file && file.size) { const u = await uploadTo('public-assets', file, 'shop'); if (!u) return; value = u; }
+  if (!value) return toast('El ítem necesita un valor o una imagen');
+  const ok = await dbUpd('shop_items', { name: f.get('name'), category: f.get('category'), rarity: f.get('rarity'), price: +f.get('price') || 0, value, plus_only: f.get('plus') === 'on', is_active: f.get('act') === 'on' }, 'id', id, 'Ítem actualizado');
+  if (ok) { closeMdl(); route(); }
+}
+async function setI(id, v){ if (await dbUpd('shop_items', { is_active: v }, 'id', id)) route(); }
+async function delI(id){ if (!confirm('¿Eliminar este ítem? Se quita del inventario de quienes lo compraron.')) return; if (await dbDel('shop_items', 'id', id, 'Ítem eliminado')) route(); }
+
+// ---- Sponsors: crear / editar / borrar ----
+async function adminSponsors(){
+  const { data } = await sb.from('sponsors').select('*').order('created_at', { ascending: false });
+  A.s = {}; (data || []).forEach(s => A.s[s.id] = s);
+  const cnt = async (id, t) => (await sb.from('sponsor_events').select('*', { count: 'exact', head: true }).eq('sponsor_id', id).eq('type', t)).count || 0;
+  const rows = await Promise.all((data || []).map(async s => ({ s, i: await cnt(s.id, 'impression'), c: await cnt(s.id, 'click') })));
+  return `<div class="card"><h3 style="margin-bottom:10px">Nuevo sponsor</h3><form onsubmit="addSponsor(event)"><div class="two"><label>Nombre<input name="name" required></label><label>Link (Instagram, web, WhatsApp)<input name="link" placeholder="https://..."></label></div><label>Texto promocional<input name="description"></label><label>Logo o banner<input type="file" name="img" accept="image/*"></label><button>Agregar sponsor</button></form></div>
+  <div class="card scroll" style="margin-top:14px"><table><tr><th>Sponsor</th><th>Impresiones</th><th>Clics</th><th>CTR</th><th></th></tr>${rows.map(({ s, i, c }) => `<tr><td>${esc(s.name)}<div class="mut">${s.is_active ? 'Activo' : 'Apagado'}</div></td><td>${i}</td><td>${c}</td><td>${i ? (c / i * 100).toFixed(2) : 0}%</td>
+  <td class="row"><button onclick="editS('${s.id}')">Editar</button><button class="alt" onclick="setS('${s.id}',${!s.is_active})">${s.is_active ? 'Apagar' : 'Activar'}</button><button class="del" onclick="delS('${s.id}')">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="5" class="mut">Todavía no hay sponsors.</td></tr>'}</table></div>`;
+}
+function editS(id){
+  const s = A.s[id];
+  mdl('Editar sponsor', `<form onsubmit="saveS(event,'${id}')"><div class="two"><label>Nombre<input name="name" required value="${esc(s.name)}"></label><label>Link<input name="link" value="${esc(s.link)}"></label></div><label>Texto promocional<input name="description" value="${esc(s.description)}"></label>
+  <label>Reemplazar logo o banner<input type="file" name="img" accept="image/*"></label><label class="row"><input type="checkbox" name="noimg" style="width:auto"> Quitar la imagen actual</label><button>Guardar cambios</button></form>`);
+}
+async function saveS(e, id){
+  e.preventDefault(); const f = new FormData(e.target), file = f.get('img'); let url = A.s[id].image_url || '';
+  if (f.get('noimg') === 'on') url = '';
+  if (file && file.size) { const u = await uploadTo('public-assets', file, 'sponsors'); if (!u) return; url = u; }
+  const ok = await dbUpd('sponsors', { name: f.get('name'), link: f.get('link') || '', description: f.get('description') || '', image_url: url }, 'id', id, 'Sponsor actualizado');
+  if (ok) { cfg = null; closeMdl(); route(); }
+}
+async function setS(id, v){ if (await dbUpd('sponsors', { is_active: v }, 'id', id)) { cfg = null; route(); } }
+async function delS(id){ if (!confirm('¿Eliminar este sponsor?')) return; if (await dbDel('sponsors', 'id', id, 'Sponsor eliminado')) { cfg = null; route(); } }
+
+// ---- Pestaña Datos: limpieza masiva ----
+function adminData(){
+  const R = (t, d, btn, js) => `<div class="card dz"><div><h3>${t}</h3><p class="mut">${d}</p></div><button class="del" onclick="${js}">${btn}</button></div>`;
+  return `<p class="mut" style="margin-bottom:12px">Acciones de limpieza. Cada una pide confirmación y no se puede deshacer.</p><div class="stack">
+  ${R('Historial de apuestas (Arena)', 'Borra el registro de apuestas de todos los jugadores. No toca las monedas.', 'Borrar historial', "purge('bets','user_id','todo el historial de apuestas')")}
+  ${R('Estadísticas de sponsors', 'Reinicia impresiones y clics de todos los sponsors.', 'Reiniciar', "purge('sponsor_events','sponsor_id','las impresiones y clics de los sponsors')")}
+  ${R('Pagos rechazados', 'Elimina los pagos de torneos que ya rechazaste.', 'Borrar', "purge('payments','id','los pagos rechazados',q=>q.eq('status','rejected'))")}
+  ${R('Solicitudes de Plus rechazadas', 'Elimina las solicitudes de Plus rechazadas.', 'Borrar', "purge('plus_requests','id','las solicitudes de Plus rechazadas',q=>q.eq('status','rejected'))")}
+  ${R('Inscripciones rechazadas o canceladas', 'Elimina inscripciones que ya no sirven.', 'Borrar', "purge('registrations','id','las inscripciones rechazadas y canceladas',q=>q.in('status',['rejected','cancelled']))")}
+  ${R('Historial de cambios de nick', 'Borra el historial de nombres de todos los perfiles.', 'Borrar', "purge('name_history','user_id','el historial de nombres')")}
+  ${R('Torneos finalizados o cancelados', 'Elimina esos torneos con sus partidos e inscripciones. El ELO ya repartido no se revierte.', 'Borrar', "purge('tournaments','id','los torneos finalizados y cancelados',q=>q.in('status',['finished','cancelled']))")}
+  </div>`;
+}
+async function viewAdmin(){
+  if (!isAdmin()) { app.innerHTML = '<div class="card">Esta sección es solo para administradores.</div>'; return; }
+  const tabs = [['torneos','Torneos'],['inscripciones','Inscripciones'],['pagos','Pagos'],['plus','Plus'],['usuarios','Usuarios'],['tienda','Tienda'],['codigos','Códigos y regalos'],['sponsors','Sponsors'],['config','Configuración'],['datos','Limpieza']];
+  const fns = { torneos: adminTournaments, inscripciones: adminRegs, pagos: adminPayments, plus: adminPlus, usuarios: adminUsers, tienda: adminShop, codigos: adminCodes, sponsors: adminSponsors, config: adminConfig, datos: adminData };
+  const body = await fns[adminTab]();
+  app.innerHTML = `<div class="adm"><h1>Panel de administración</h1><div class="tabs">${tabs.map(([k, l]) => `<button class="${adminTab === k ? '' : 'alt'}" onclick="adminTab='${k}';route()">${l}</button>`).join('')}</div>${body}</div>`;
+}
+
+// ---- Móvil: menú ☰, tablas del admin como tarjetas, imágenes diferidas ----
+const _hdr = header;
+header = function(){
+  _hdr(); const h = document.getElementById('top'); h.classList.remove('open');
+  const nav = h.querySelector('nav'); if (!nav) return;
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'mb alt'; b.setAttribute('aria-label', 'Menú'); b.textContent = '☰';
+  b.onclick = () => { const o = h.classList.toggle('open'); b.textContent = o ? '✕' : '☰'; };
+  h.querySelector('.logo').after(b); nav.querySelectorAll('a').forEach(a => a.addEventListener('click', () => h.classList.remove('open')));
+};
+function postRender(){
+  document.querySelectorAll('.adm table').forEach(t => {
+    const heads = [...(t.querySelector('tr')?.children || [])].map(x => x.textContent.trim());
+    t.querySelectorAll('tr').forEach(tr => {
+      if (tr.querySelector('th')) { tr.classList.add('hd'); return; }
+      [...tr.children].forEach((td, i) => td.setAttribute('data-l', td.colSpan > 1 ? '' : (heads[i] || '')));
+    });
+  });
+  document.querySelectorAll('img:not([loading])').forEach(i => { i.loading = 'lazy'; i.decoding = 'async'; });
+}
+const _route = route;
+route = async function(){ await _route(); postRender(); };
 
 window.addEventListener('hashchange', route);
 sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; profile = null; } });
