@@ -349,7 +349,7 @@ function header(){
 }
 function footer(){
   const lk = (k, t) => cfg?.[k] ? `<a href="${esc(cfg[k])}" target="_blank" rel="noopener">${t}</a>` : '';
-  document.getElementById('foot').innerHTML = `<b style="color:#fff">FastGame Esports</b> · Competí. Ganá. Subí de ranking.<div class="row" style="justify-content:center;margin-top:8px">${lk('social_kick','Kick')} ${lk('social_youtube','YouTube')} ${lk('whatsapp_group_url','WhatsApp')}</div>`;
+  document.getElementById('foot').innerHTML = `<b style="color:#fff">FastGame Esports</b> · Competí. Ganá. Subí de ranking.<div class="row" style="justify-content:center;margin-top:6px"><a href="terminos.html">Condiciones del Servicio</a> <a href="privacidad.html">Política de Privacidad</a></div><div class="row" style="justify-content:center;margin-top:8px">${lk('social_kick','Kick')} ${lk('social_youtube','YouTube')} ${lk('whatsapp_group_url','WhatsApp')}</div>`;
 }
 const tcard = t => `<a href="#/torneo/${t.id}" class="card"><span class="tag">${ST[t.status]}</span><h3 style="margin-top:8px">${esc(t.name)}</h3><div class="mut">${esc(t.game)} · ${fdate(t.date)} ${esc(t.time)}</div><div style="margin-top:8px">${t.prize ? 'Premio: <b>' + esc(t.prize) + '</b><br>' : ''}${t.is_free ? 'Gratis' : '$' + t.price + ' ARS'}</div></a>`;
 
@@ -804,7 +804,8 @@ async function route(){
 }
 
 // ====== V6: acceso solo con cuenta, Google, predicciones, ELO por puesto y códigos ======
-const gateHero = () => `<section class="hero2"><h1>COMPETÍ. GANÁ.<br><span>SUBÍ DE RANKING.</span></h1><p>Ingresá para ver los torneos, el ranking y la Arena de FastGame Esports.</p><button onclick="googleLogin()" style="font-size:16px;padding:12px 22px">Continuar con Google</button><p class="mut" style="margin-top:12px">o ingresá con tu email acá abajo</p></section>`;
+const GOOGLE_ON = false; // cambiar a true cuando la app de Google esté publicada
+const gateHero = () => `<section class="hero2"><h1>COMPETÍ. GANÁ.<br><span>SUBÍ DE RANKING.</span></h1><p>Ingresá para ver los torneos, el ranking y la Arena de FastGame Esports.</p>${GOOGLE_ON ? `<button onclick="googleLogin()" style="font-size:16px;padding:12px 22px">Continuar con Google</button><p class="mut" style="margin-top:12px">o ingresá con tu email acá abajo</p>` : ''}<p class="mut" style="font-size:13px">Al ingresar aceptás las <a href="terminos.html">Condiciones del Servicio</a> y la <a href="privacidad.html">Política de Privacidad</a>.</p></section>`;
 async function googleLogin(){ const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }); if (error) toast(error.message); }
 const redeemCard = () => `<div class="card row" style="justify-content:space-between;margin-top:14px"><div><h3>¿Tenés un código?</h3><p class="mut">Canjealo por Monedas FGE.</p></div><form class="row" onsubmit="redeem(event)"><input name="c" placeholder="Código" required style="width:180px"><button>Canjear</button></form></div>`;
 async function redeem(e){
