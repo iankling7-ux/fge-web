@@ -66,7 +66,7 @@ footer{border-top:1px solid var(--line);padding:24px 20px 100px;color:var(--mut)
 const SUPABASE_URL = 'https://ehffewpqzmadlulxjslt.supabase.co'; // verificá que sea la Project URL de tu proyecto
 const SUPABASE_KEY = 'sb_publishable_RAXrXtIVXwPgocQxiFSmtA_e7LpeOZM';
 // ===========================
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce' } });
 const app = document.getElementById('app');
 let me = null, profile = null, adminTab = 'torneos';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -142,7 +142,7 @@ async function viewTournament(id){
     <div class="mut">${esc(t.game)} · ${fdate(t.date)} ${esc(t.time)} · ${t.total_slots ? 'Cupos libres: ' + t.available_slots + '/' + t.total_slots : 'Sin límite de cupos'}</div>
     ${t.prize ? `<p>Premio: <b>${esc(t.prize)}</b></p>` : ''}${t.info ? `<p>${esc(t.info)}</p>` : ''}${t.rules ? `<h3>Reglas</h3><p style="white-space:pre-wrap">${esc(t.rules)}</p>` : ''}</div>
     <div class="card"><h3 style="margin-bottom:10px">Inscripción</h3>${box}</div>
-    ${bracketHtml}<div class="card"><h3 style="margin-bottom:8px">Jugadores confirmados (${parts?.length || 0})</h3><div class="mut">${(parts || []).map(p => esc(p.nick)).join(' · ') || 'Todavía no hay jugadores confirmados.'}</div></div></div>`;
+    ${bracketHtml}<div id="tx"></div><div class="card"><h3 style="margin-bottom:8px">Jugadores confirmados (${parts?.length || 0})</h3><div class="mut">${(parts || []).map(p => esc(p.nick)).join(' · ') || 'Todavía no hay jugadores confirmados.'}</div></div></div>`;
 }
 async function register(e, tid){
   e.preventDefault(); const f = new FormData(e.target);
@@ -802,6 +802,76 @@ async function route(){
   } catch (e) { app.innerHTML = `<div class="card"><h3>Algo salió mal</h3><p class="mut">${esc(e.message)}</p></div>`; }
   footer(); adExtras(); window.scrollTo(0, 0);
 }
+
+// ====== V6: acceso solo con cuenta, Google, predicciones, ELO por puesto y códigos ======
+const gateHero = () => `<section class="hero2"><h1>COMPETÍ. GANÁ.<br><span>SUBÍ DE RANKING.</span></h1><p>Ingresá para ver los torneos, el ranking y la Arena de FastGame Esports.</p><button onclick="googleLogin()" style="font-size:16px;padding:12px 22px">Continuar con Google</button><p class="mut" style="margin-top:12px">o ingresá con tu email acá abajo</p></section>`;
+async function googleLogin(){ const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } }); if (error) toast(error.message); }
+const redeemCard = () => `<div class="card row" style="justify-content:space-between;margin-top:14px"><div><h3>¿Tenés un código?</h3><p class="mut">Canjealo por Monedas FGE.</p></div><form class="row" onsubmit="redeem(event)"><input name="c" placeholder="Código" required style="width:180px"><button>Canjear</button></form></div>`;
+async function redeem(e){
+  e.preventDefault(); const { data, error } = await sb.rpc('redeem_code', { p_code: new FormData(e.target).get('c') });
+  if (error) return toast(error.message); toast('¡Código canjeado! +' + cf(data) + ' monedas'); await loadMe(); route();
+}
+async function predict(e, id){ e.preventDefault(); const { error } = await sb.rpc('make_prediction', { p_tid: id, p_participant: new FormData(e.target).get('p') }); if (error) return toast(error.message); toast('Predicción guardada'); route(); }
+function closeT(id){ if (confirm('¿Cerrar el torneo y repartir el ELO? Se calcula desde las llaves y no se puede repetir.')) adm('close_tournament', { p_tid: id }, 'Torneo cerrado: ELO repartido'); }
+async function tExtras(id){
+  const box = document.getElementById('tx'); if (!box) return;
+  const [t, ps, mc, mine] = await Promise.all([sb.from('tournaments').select('*').eq('id', id).single(), sb.from('participants').select('id,nick').eq('tournament_id', id).eq('status', 'active'), sb.from('matches').select('*', { count: 'exact', head: true }).eq('tournament_id', id), sb.from('predictions').select('participant_id').eq('tournament_id', id).eq('user_id', me.id).maybeSingle()]);
+  const T = t.data, P = ps.data || [], my = mine.data?.participant_id, myNick = P.find(p => p.id === my)?.nick, open = !mc.count && ['open','coming_soon','full'].includes(T.status);
+  let h = '';
+  if (open && P.length) h += `<div class="card"><h3>Predicción del campeón</h3><p class="mut">Elegí quién creés que va a ganar. Si acertás, ganás <b>+3.000 ELO</b>. Podés cambiarla hasta que empiece el torneo.${myNick ? ` Tu elección: <b>${esc(myNick)}</b>.` : ''}</p><form onsubmit="predict(event,'${id}')" class="row" style="margin-top:8px"><select name="p" style="max-width:260px">${P.map(p => `<option value="${p.id}" ${p.id === my ? 'selected' : ''}>${esc(p.nick)}</option>`).join('')}</select><button>Guardar predicción</button></form></div>`;
+  else if (myNick) h += `<div class="card">Tu predicción del campeón: <b>${esc(myNick)}</b></div>`;
+  if (isAdmin() && mc.count && !T.elo_awarded) h += `<div class="card row" style="justify-content:space-between"><div><h3>Cerrar torneo</h3><p class="mut">Cuando termine la final: campeón +5.000 ELO, subcampeón +2.000, semifinal +1.000, cuartos +500, +100 por participar y +100 por victoria. También resuelve las predicciones.</p></div><button onclick="closeT('${id}')">Cerrar y repartir ELO</button></div>`;
+  else if (T.elo_awarded) h += '<div class="card"><span class="tag ok">ELO repartido</span></div>';
+  box.innerHTML = h;
+}
+async function route(){
+  const h = location.hash || '#/';
+  if (!me) {
+    document.getElementById('top').innerHTML = '<a href="#/" class="logo"><span class="fg">FG</span>FAST<b>GAME</b> ESPORTS</a>';
+    ['adtop','adbar','foot'].forEach(x => document.getElementById(x).innerHTML = '');
+    viewLogin(); app.insertAdjacentHTML('afterbegin', gateHero()); return;
+  }
+  await loadCfg(); header();
+  if (profile?.account_status === 'banned' || profile?.account_status === 'suspended') { app.innerHTML = `<div class="card"><h3>Tu cuenta está ${profile.account_status === 'banned' ? 'baneada' : 'suspendida'}</h3><p class="mut">Contactá a la organización por WhatsApp para más información.</p><button onclick="logout()">Salir</button></div>`; return; }
+  try {
+    if (h.startsWith('#/torneo/')) await viewTournament(h.split('/')[2]);
+    else if (h.startsWith('#/jugador/')) await viewPlayer(h.split('/')[2]);
+    else if (h === '#/torneos') await viewTorneos();
+    else if (h === '#/ranking') await viewRanking();
+    else if (h === '#/jugadores') await viewPlayers();
+    else if (h === '#/plus') await viewPlus();
+    else if (h === '#/tienda') await viewShop();
+    else if (h === '#/arena') { await viewArena(); app.insertAdjacentHTML('beforeend', redeemCard()); }
+    else if (h === '#/login') { location.hash = '#/'; return; }
+    else if (h === '#/perfil') await viewProfile();
+    else if (h === '#/admin') await viewAdmin();
+    else { await viewHome(); app.insertAdjacentHTML('beforeend', redeemCard()); }
+    if (h.startsWith('#/torneo/')) tExtras(h.split('/')[2]);
+  } catch (e) { app.innerHTML = `<div class="card"><h3>Algo salió mal</h3><p class="mut">${esc(e.message)}</p></div>`; }
+  footer(); adExtras(); window.scrollTo(0, 0);
+}
+// ---- Admin: Códigos y regalos ----
+async function viewAdmin(){
+  if (!isAdmin()) { app.innerHTML = '<div class="card">Esta sección es solo para administradores.</div>'; return; }
+  const tabs = [['torneos','Torneos'],['inscripciones','Inscripciones'],['pagos','Pagos'],['plus','Plus'],['usuarios','Usuarios'],['tienda','Tienda'],['codigos','Códigos y regalos'],['sponsors','Sponsors'],['config','Configuración']];
+  const fns = { torneos: adminTournaments, inscripciones: adminRegs, pagos: adminPayments, plus: adminPlus, usuarios: adminUsers, tienda: adminShop, codigos: adminCodes, sponsors: adminSponsors, config: adminConfig };
+  const body = await fns[adminTab]();
+  app.innerHTML = `<h1>Panel de administración</h1><div class="tabs" style="flex-wrap:wrap">${tabs.map(([k, l]) => `<button class="${adminTab === k ? '' : 'alt'}" onclick="adminTab='${k}';route()">${l}</button>`).join('')}</div>${body}`;
+}
+async function adminCodes(){
+  const [cs, us, its] = await Promise.all([sb.from('codes').select('*').order('created_at', { ascending: false }), sb.from('profiles').select('id,nick').order('nick'), sb.from('shop_items').select('id,name,category').order('name')]);
+  return `<div class="card"><h3 style="margin-bottom:10px">Nuevo código canjeable</h3><form onsubmit="addCode(event)"><div class="two"><label>Código<input name="code" required></label><label>Monedas que da<input type="number" name="coins" min="1" value="5000" required></label></div><div class="two"><label>Usos máximos (vacío = ilimitado)<input type="number" name="max" min="1"></label><label>Vence (opcional)<input type="date" name="exp"></label></div><button>Crear código</button></form><p class="mut" style="margin-top:8px">Cada persona puede canjear cada código una sola vez. Ideal para decirlos en tus transmisiones.</p></div>
+    <div class="card scroll" style="margin-top:14px"><table><tr><th>Código</th><th>Monedas</th><th>Usos</th><th>Estado</th><th></th></tr>${(cs.data || []).map(c => `<tr><td><b>${esc(c.code)}</b>${c.expires_at ? `<div class="mut">vence ${fdate(c.expires_at.slice(0, 10))}</div>` : ''}</td><td>${cf(c.coins)}</td><td>${c.uses}${c.max_uses ? ' / ' + c.max_uses : ''}</td><td>${c.is_active ? 'Activo' : 'Apagado'}</td><td class="row"><button class="alt" onclick="setCode('${esc(c.code)}',${!c.is_active})">${c.is_active ? 'Apagar' : 'Activar'}</button><button class="del" onclick="delCode('${esc(c.code)}')">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="5" class="mut">No hay códigos.</td></tr>'}</table></div>
+    <div class="card" style="margin-top:14px"><h3 style="margin-bottom:10px">Regalar un ítem (campeón, jugador del mes, premios)</h3><form onsubmit="grantItem(event)" class="row"><select name="u" style="max-width:220px">${(us.data || []).map(u => `<option value="${u.id}">${esc(u.nick)}</option>`).join('')}</select><select name="i" style="max-width:260px">${(its.data || []).map(i => `<option value="${i.id}">${esc(i.name)} (${i.category})</option>`).join('')}</select><button>Regalar</button></form><p class="mut" style="margin-top:8px">Para premios exclusivos: creá el ítem en la solapa Tienda, ocultalo y regalalo desde acá. No se puede comprar, pero aparece en el inventario.</p></div>`;
+}
+async function addCode(e){
+  e.preventDefault(); const f = new FormData(e.target);
+  const { error } = await sb.from('codes').insert({ code: f.get('code').trim().toLowerCase(), coins: +f.get('coins'), max_uses: f.get('max') ? +f.get('max') : null, expires_at: f.get('exp') ? f.get('exp') + 'T23:59:59-03:00' : null });
+  if (error) return toast(error.message.includes('duplicate') ? 'Ese código ya existe' : error.message); toast('Código creado'); route();
+}
+async function setCode(c, v){ await sb.from('codes').update({ is_active: v }).eq('code', c); route(); }
+async function delCode(c){ if (confirm('¿Eliminar este código?')) { await sb.from('codes').delete().eq('code', c); route(); } }
+function grantItem(e){ e.preventDefault(); const f = new FormData(e.target); adm('admin_grant_item', { p_user: f.get('u'), p_item: f.get('i') }, 'Ítem regalado'); }
 
 window.addEventListener('hashchange', route);
 sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; profile = null; } });
