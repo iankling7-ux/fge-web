@@ -1137,7 +1137,42 @@ function brand(){
   document.querySelectorAll('.logo .fg').forEach(el => { const i = document.createElement('img'); i.src = LOGO_MARK; i.alt = 'FG'; i.className = 'fgi'; i.loading = 'eager'; el.replaceWith(i); });
   document.querySelectorAll('.hero2').forEach(h => { if (h.querySelector('.lg')) return; const i = document.createElement('img'); i.src = LOGO_FULL; i.alt = 'FastGame Esports'; i.className = 'lg'; i.loading = 'eager'; i.width = 340; i.height = 207; h.prepend(i); });
 }
-route = async function(){ await _route(); postRender(); brand(); };
+// ---- Recuperar y cambiar contraseña ----
+let recovering = false;
+async function forgot(){
+  const inp = document.querySelector('form[onsubmit="login(event)"] [name=email]');
+  const email = (inp && inp.value.trim()) || (prompt('Escribí tu email y te mandamos un enlace para crear una contraseña nueva:') || '').trim();
+  if (!email) return;
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  if (error) return toast(error.message);
+  toast('Listo. Revisá tu email (también spam) y abrí el enlace desde este mismo navegador.');
+}
+function viewRecovery(){
+  app.innerHTML = `<div class="card stack" style="max-width:420px;margin:20px auto"><h2>Elegí tu nueva contraseña</h2><form onsubmit="setNewPass(event)"><label>Nueva contraseña (mínimo 6)<input type="password" name="pw" required minlength="6" autocomplete="new-password"></label><label>Repetila<input type="password" name="pw2" required minlength="6" autocomplete="new-password"></label><button>Guardar contraseña</button></form></div>`;
+}
+async function setNewPass(e){
+  e.preventDefault(); const f = new FormData(e.target);
+  if (f.get('pw') !== f.get('pw2')) return toast('Las contraseñas no coinciden');
+  const { error } = await sb.auth.updateUser({ password: f.get('pw') }); if (error) return toast(error.message);
+  toast('Contraseña actualizada'); recovering = false; await loadMe(); location.hash = '#/'; route();
+}
+async function changePass(e){
+  e.preventDefault(); const f = new FormData(e.target);
+  if (f.get('pw') !== f.get('pw2')) return toast('Las contraseñas no coinciden');
+  const { error } = await sb.auth.updateUser({ password: f.get('pw') }); if (error) return toast(error.message);
+  e.target.reset(); toast('Contraseña cambiada');
+}
+const passCard = () => `<div class="card" style="margin-top:16px"><h3 style="margin-bottom:10px">Cambiar contraseña</h3><form onsubmit="changePass(event)"><div class="two"><label>Nueva contraseña<input type="password" name="pw" required minlength="6" autocomplete="new-password"></label><label>Repetila<input type="password" name="pw2" required minlength="6" autocomplete="new-password"></label></div><button>Cambiar contraseña</button></form></div>`;
+function forgotLink(){
+  const f = document.querySelector('form[onsubmit="login(event)"]');
+  if (f && !document.getElementById('fp')) f.insertAdjacentHTML('afterend', '<a href="#" id="fp" onclick="forgot();return false" style="font-size:14px">¿Olvidaste tu contraseña?</a>');
+}
+sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') { recovering = true; setTimeout(route, 0); } });
+route = async function(){
+  if (recovering) { viewRecovery(); return; }
+  await _route(); postRender(); brand(); forgotLink();
+  if (me && (location.hash || '') === '#/perfil') app.insertAdjacentHTML('beforeend', passCard());
+};
 
 window.addEventListener('hashchange', route);
 sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; profile = null; } });
