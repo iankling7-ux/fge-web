@@ -127,6 +127,14 @@ body{font-size:15px;-webkit-font-smoothing:antialiased}
  .hero2{padding:20px 0 14px}.lg{width:min(220px,60vw)}h1{font-size:24px}h2{font-size:19px}h3{font-size:17px}
 }
 @media(max-width:520px){.es{display:none}}
+.bar{height:8px;background:#091428;border-radius:9px;overflow:hidden}.bar i{display:block;height:100%;background:var(--cy);transition:width .4s}
+.lvs{display:flex;gap:8px;overflow-x:auto;padding:12px 0 4px;scrollbar-width:none}.lv{flex:none;width:84px;text-align:center;border:1px solid var(--line);border-radius:10px;padding:8px 4px;font-size:12px;display:grid;gap:4px;align-content:start}.lv b{font-size:18px}.lv.ok{opacity:.5}.lv.go{border-color:var(--cy)}.lv button{padding:4px;min-height:32px;font-size:12px}
+.mpr{padding:10px 0}.mpr+.mpr{border-top:1px solid var(--line)}.mpr .row button{flex:1}
+.box{font-size:96px;cursor:pointer;display:inline-block;user-select:none;line-height:1.2}.box.shake{animation:shk .12s infinite}.box.open{animation:pp .45s}
+@keyframes shk{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}@keyframes pp{0%{transform:scale(.7)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
+#bxc{position:relative;height:0}.coin{position:absolute;top:-190px;font-style:normal;font-size:24px;animation:fall 1.5s ease-in both}@keyframes fall{to{transform:translateY(280px) rotate(360deg);opacity:0}}
+.ft{border-color:var(--warn)}.nw{display:block;margin-top:6px;padding:8px 10px;border-radius:8px;background:#12305a;font-weight:600}
+.pa{width:40px;height:40px;border-radius:50%;object-fit:cover;background:#12305a;display:grid;place-items:center;flex:none}.pi{max-width:100%;border-radius:10px;margin-top:6px}.pb{white-space:pre-wrap;word-break:break-word;margin:6px 0}
 </style>
 </head>
 <body>
@@ -1235,10 +1243,6 @@ route = async function(){
   if (me && (location.hash || '') === '#/perfil') app.insertAdjacentHTML('beforeend', passCard());
 };
 
-window.addEventListener('hashchange', route);
-sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; profile = null; } });
-loadMe().then(route);
-
 // ====== V9: menú claro, anuncios que no tapan en celular, Hoy (racha/caja/desafío), invitaciones, insignias, comunidad ======
 const TZ = 'America/Argentina/Buenos_Aires', arDay = ms => new Date(Date.now() - ms).toLocaleDateString('en-CA', { timeZone: TZ });
 const _adx = adExtras;
@@ -1256,13 +1260,13 @@ header = function(){
 document.addEventListener('click', e => { const t = document.getElementById('top'); if (t.classList.contains('open') && !t.contains(e.target)) { t.classList.remove('open'); const b = document.getElementById('mbtn'); if (b) b.textContent = '☰ Menú'; } });
 
 async function hubCard(){
-  const t = arDay(0), p = profile, { count } = await sb.from('bets').select('id', { count: 'exact', head: true }).eq('user_id', me.id).gte('created_at', t + 'T00:00:00-03:00');
-  const n = count || 0, s = (p.last_checkin === t || p.last_checkin === arDay(864e5)) ? (p.streak || 0) : 0;
-  const B = (done, ok, fn, l) => done ? '<span class="tag ok">Hecho ✓</span>' : `<button ${ok ? '' : 'disabled'} onclick="hub('${fn}')">${l}</button>`;
+  const t = arDay(0), p = profile; await loadFGS(); const { count } = await sb.from('bets').select('id', { count: 'exact', head: true }).eq('user_id', me.id).gte('created_at', t + 'T00:00:00-03:00');
+  const GM = FGS.challenge_games || 3, n = count || 0, s = (p.last_checkin === t || p.last_checkin === arDay(864e5)) ? (p.streak || 0) : 0;
+  const B = (done, ok, fn, l) => done ? '<span class="tag ok">Hecho ✓</span>' : `<button ${ok ? '' : 'disabled'} onclick="${fn === 'fg_open_box' ? 'openBox()' : `hub('${fn}')`}">${l}</button>`;
   return `<div class="card hub"><div class="hubh"><b>Hoy</b><span class="mut">🔥 Racha: ${s} día${s === 1 ? '' : 's'}</span></div>
   <div class="hr"><div><b>Check-in diario</b><div class="mut">Sumá un día a tu racha. Cada 7 días, bonus.</div></div>${B(p.last_checkin === t, 1, 'fg_checkin', 'Reclamar')}</div>
   <div class="hr"><div><b>Caja misteriosa</b><div class="mut">Una caja por día con monedas sorpresa.</div></div>${B(p.last_box === t, 1, 'fg_open_box', 'Abrir 🎁')}</div>
-  <div class="hr"><div><b>Desafío del día</b><div class="mut">Jugá 3 partidas en la <a href="#/arena">Arena</a> (${Math.min(n, 3)}/3)</div></div>${B(p.last_challenge === t, n >= 3, 'fg_claim_challenge', 'Cobrar')}</div></div>`;
+  <div class="hr"><div><b>Desafío del día</b><div class="mut">Jugá ${GM} partidas en la <a href="#/arena">Arena</a> (${Math.min(n, GM)}/${GM})</div></div>${B(p.last_challenge === t, n >= GM, 'fg_claim_challenge', 'Cobrar')}</div></div>`;
 }
 async function hub(fn){ const { data, error } = await sb.rpc(fn); if (error) return toast(error.message); toast('+' + cf(data) + ' monedas 🪙'); await loadMe(); route(); }
 
@@ -1289,7 +1293,7 @@ async function post(e){ e.preventDefault(); const b = new FormData(e.target).get
 async function delPost(id){ if (!confirm('¿Borrar esta publicación?')) return; if (await dbDel('posts', 'id', id, 'Publicación borrada')) route(); }
 
 // ---- Admin: Comunidad (streamers + feed) ----
-const stForm = (s, h) => { s = s || {}; return `<form onsubmit="${h}"><div class="two"><label>Nombre<input name="name" required value="${esc(s.name)}"></label><label>Plataforma<select name="platform">${['Kick', 'YouTube', 'Twitch', 'TikTok'].map(x => `<option ${s.platform === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div><label>Link del canal<input name="url" required placeholder="https://..." value="${esc(s.url)}"></label><label>Foto (opcional)<input type="file" name="img" accept="image/*"></label><button>${s.id ? 'Guardar' : 'Agregar streamer'}</button></form>`; };
+const stForm0 = (s, h) => { s = s || {}; return `<form onsubmit="${h}"><div class="two"><label>Nombre<input name="name" required value="${esc(s.name)}"></label><label>Plataforma<select name="platform">${['Kick', 'YouTube', 'Twitch', 'TikTok'].map(x => `<option ${s.platform === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div><label>Link del canal<input name="url" required placeholder="https://..." value="${esc(s.url)}"></label><label>Foto (opcional)<input type="file" name="img" accept="image/*"></label><button>${s.id ? 'Guardar' : 'Agregar streamer'}</button></form>`; };
 async function adminCommunity(){
   const [st, ps] = await Promise.all([sb.from('streamers').select('*').order('name'), sb.from('posts').select('id,body,profiles(nick)').order('created_at', { ascending: false }).limit(40)]);
   A.st = {}; (st.data || []).forEach(s => A.st[s.id] = s);
@@ -1327,11 +1331,162 @@ route = async function(){
   }
   await _r9();
   if (!me || !profile || recovering || ['banned', 'suspended'].includes(profile.account_status)) return;
-  try { const inv = localStorage.getItem('fge_inv'); if (inv && !profile.invited_by) { localStorage.removeItem('fge_inv'); const { error } = await sb.rpc('fg_redeem_invite', { p_code: inv }); if (!error) { toast('¡Código de invitación aplicado! +2.000 🪙'); await loadMe(); header(); } } } catch (e) {}
+  try { const inv = localStorage.getItem('fge_inv'); if (inv && !profile.invited_by) { localStorage.removeItem('fge_inv'); const { error } = await sb.rpc('fg_redeem_invite', { p_code: inv }); if (!error) { toast('¡Código de invitación aplicado! Premio sorpresa 🎁'); await loadMe(); header(); } } } catch (e) {}
   const same = () => (location.hash || '#/') === h;
   if (h === '#/' || h === '') { const html = await hubCard(); if (same()) { const el = document.createElement('div'); el.innerHTML = html; const hero = app.querySelector('.hero2'); hero ? hero.after(el.firstElementChild) : app.prepend(el.firstElementChild); } }
   if (h === '#/perfil') { const html = await profileExtras(); if (same()) app.insertAdjacentHTML('beforeend', html); }
 };
+
+// ====== V10: pase de temporada + predicciones de partidas ======
+function seasonCard(){
+  const xp = profile.season_xp || 0, cl = profile.season_claimed || 0, lv = Math.min(10, Math.floor(xp / 100)), nm = (cfg && cfg.season_name) || 'Temporada 1', rw = l => l === 5 ? 10000 : l === 10 ? 30000 : 1000 * l;
+  return `<div class="card" style="margin:14px 0"><div class="hubh" style="border:0;padding:0 0 8px"><b>🏅 Pase · ${esc(nm)}</b><span class="mut">Nivel ${lv}/10${lv < 10 ? ` · ${xp % 100}/100 XP` : ''}</span></div><div class="bar"><i style="width:${lv >= 10 ? 100 : xp % 100}%"></i></div>
+  <div class="lvs">${Array.from({ length: 10 }, (_, i) => i + 1).map(l => `<div class="lv ${l <= cl ? 'ok' : l === cl + 1 && l <= lv ? 'go' : ''}"><b>${l}</b><span>🪙 ${cf(rw(l))}</span>${l <= cl ? '✓' : l === cl + 1 && l <= lv ? `<button onclick="hub('fg_claim_level')">Cobrar</button>` : '🔒'}</div>`).join('')}</div>
+  <p class="mut">XP: check-in +20, caja +10, desafío +40 y +15 por cada predicción de partido acertada.</p></div>`;
+}
+const _hc = hubCard; hubCard = async function(){ return (await _hc()) + seasonCard(); };
+
+async function mpCard(id){
+  const [ms, ps, mine] = await Promise.all([sb.from('matches').select('id,participant_a,participant_b').eq('tournament_id', id).neq('status', 'finished'), sb.from('participants').select('id,nick').eq('tournament_id', id), sb.from('match_predictions').select('match_id,pick').eq('user_id', me.id)]);
+  const open = (ms.data || []).filter(m => m.participant_a && m.participant_b), nick = x => ps.data?.find(p => p.id === x)?.nick || '?', pk = Object.fromEntries((mine.data || []).map(r => [r.match_id, r.pick]));
+  let el = document.getElementById('mp'); if (!el) { const tx = document.getElementById('tx'); if (!tx) return; el = document.createElement('div'); el.id = 'mp'; tx.after(el); }
+  const B = (m, p) => `<button class="${pk[m.id] === p ? '' : 'alt'}" onclick="pickM('${m.id}','${p}','${id}')">${esc(nick(p))}</button>`;
+  el.innerHTML = open.length ? `<div class="card"><h3>Predicciones de partidas</h3><p class="mut">Elegí quién gana cada partido: +300 🪙 y +15 XP por acierto. Podés cambiar hasta que se juegue.</p>${open.map(m => `<div class="mpr"><div class="row">${B(m, m.participant_a)}${B(m, m.participant_b)}</div></div>`).join('')}</div>` : '';
+}
+async function pickM(m, p, t){ const { error } = await sb.from('match_predictions').upsert({ match_id: m, user_id: me.id, pick: p }, { onConflict: 'match_id,user_id' }); if (error) return toast(error.message); mpCard(t); }
+
+const _adc = adminCommunity;
+adminCommunity = async function(){
+  return `<div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:10px">Pase de temporada</h3><form onsubmit="saveSeason(event)" class="row" style="flex-wrap:nowrap"><input name="n" value="${esc((cfg && cfg.season_name) || '')}" placeholder="Nombre (ej. Temporada 1)" required><button>Guardar</button></form><p class="mut" style="margin:8px 0">Una temporada nueva reinicia el XP y los niveles cobrados de todos.</p><button class="del" onclick="newSeason()">Nueva temporada (reiniciar XP)</button></div>` + await _adc();
+};
+async function saveSeason(e){ e.preventDefault(); const { error } = await sb.from('app_settings').upsert({ key: 'season_name', value: new FormData(e.target).get('n').trim(), is_public: true }); if (error) return toast(error.message); cfg = null; toast('Guardado'); route(); }
+async function newSeason(){ if (!confirm('¿Reiniciar el XP y los niveles de TODOS los jugadores?')) return; const { error } = await sb.rpc('fg_new_season'); if (error) return toast(error.message); toast('Temporada reiniciada'); route(); }
+
+const _r10 = route;
+route = async function(){
+  await _r10();
+  const h = location.hash || '#/';
+  if (h.startsWith('#/torneo/') && me && profile && !['banned', 'suspended'].includes(profile.account_status)) {
+    const { data: g } = await sb.rpc('fg_claim_predictions'); if (g > 0) { toast('¡Acertaste! +' + cf(g) + ' 🪙'); loadMe().then(header); }
+    if ((location.hash || '') === h) mpCard(h.split('/')[2]);
+  }
+};
+
+// ====== V11: caja animada, feed tipo Twitter, streamer destacado, colección, todo editable desde Admin ======
+let FGS = null;
+const FGD = { streak_base: 500, streak_step: 250, streak_bonus7: 5000, challenge_games: 3, challenge_reward: 1500, pred_reward: 300 };
+async function loadFGS(){ if (FGS) return FGS; const { data } = await sb.from('fg_settings').select('key,value'); FGS = Object.fromEntries((data || []).map(r => [r.key, r.value])); return FGS; }
+
+function openBox(){
+  mdl('Caja misteriosa', '<div style="text-align:center"><div id="bx" class="box">🎁</div><p id="bxt" class="mut">Tocá la caja para abrirla</p><div id="bxc"></div></div>');
+  document.getElementById('bx').onclick = doBox;
+}
+async function doBox(){
+  const b = document.getElementById('bx'); if (b.dataset.u) return; b.dataset.u = 1; b.classList.add('shake'); document.getElementById('bxt').textContent = 'Abriendo...';
+  const [{ data, error }] = await Promise.all([sb.rpc('fg_open_box'), new Promise(r => setTimeout(r, 1300))]);
+  if (error) { closeMdl(); return toast(error.message); }
+  b.classList.remove('shake'); b.classList.add('open'); b.textContent = '📦';
+  const t = document.getElementById('bxt');
+  if (!data) t.innerHTML = '<b>La caja estaba vacía 💨</b><br>Mañana hay otra chance';
+  else { t.innerHTML = `<b style="font-size:24px;color:var(--warn)">+${cf(data)} 🪙</b>`; document.getElementById('bxc').innerHTML = Array.from({ length: Math.min(26, 6 + Math.floor(data / 200)) }, () => `<i class="coin" style="left:${5 + Math.random() * 90}%;animation-delay:${(Math.random() * .8).toFixed(2)}s">🪙</i>`).join(''); }
+  await loadMe(); header();
+  document.querySelector('#mdl .mdlc')?.insertAdjacentHTML('beforeend', '<button style="margin-top:14px" onclick="closeMdl();route()">Listo</button>');
+}
+
+const bval = (p, k, V) => ({ wins: p.wins, tournaments_won: p.tournaments_won, elo_points: p.elo_points, streak_best: p.streak_best, coins: p.coins, inventory_value: V.val, items_count: V.n, plus: p.plus_until && new Date(p.plus_until) > new Date() ? 1 : 0 })[k] || 0;
+async function collectionCard(p, uid){
+  const [it, inv, bd] = await Promise.all([sb.from('shop_items').select('*'), sb.from('inventory').select('item_id').eq('user_id', uid), sb.from('badges').select('*').eq('is_active', true).order('threshold')]);
+  const ids = new Set((inv.data || []).map(r => r.item_id)), mine = (it.data || []).filter(i => ids.has(i.id)), V = { val: mine.reduce((s, i) => s + (i.price || 0), 0), n: mine.length }, G = bd.data || [], ok = b => bval(p, b.kind, V) >= b.threshold;
+  const live = (p.last_checkin === arDay(0) || p.last_checkin === arDay(864e5)) ? (p.streak || 0) : 0;
+  return `<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>Colección</h3><span class="tag warn">🔥 Racha ${live} · mejor ${p.streak_best || 0}</span></div>
+  <p class="mut" style="margin:6px 0">Valor del inventario: <b>🪙 ${cf(V.val)}</b> · ${V.n} ítems</p><div class="row">${CATS.map(([k, l]) => `<span class="tag">${l}: ${mine.filter(i => i.category === k).length}</span>`).join('')}</div>
+  <h3 style="margin:14px 0 8px">Insignias ${G.filter(ok).length}/${G.length}</h3><div class="bdg">${G.map(b => `<div class="${ok(b) ? '' : 'off'}"><b>${esc(b.icon)}</b>${esc(b.name)}</div>`).join('')}</div></div>`;
+}
+async function profileExtras(){
+  const { data: code } = await sb.rpc('fg_my_invite'); if (!code) return '';
+  const { data: got } = await sb.rpc('fg_claim_invites');
+  if (got > 0) { toast('¡Tus invitados jugaron! Premio sorpresa: +' + cf(got) + ' 🪙'); loadMe().then(header); }
+  const p = profile, link = location.origin + location.pathname + '?inv=' + code;
+  return `<div class="card" style="margin-top:16px"><h3>Invitá amigos</h3><p class="mut">Tu código: <b>${esc(code)}</b>. Cuando un invitado juegue su primera partida, ganás un premio sorpresa (como la caja) por cada uno.</p><button onclick="shareInv('${esc(link)}')">Compartir enlace</button>${p.invited_by ? '' : `<form onsubmit="useInv(event)" class="row" style="margin-top:12px;flex-wrap:nowrap"><input name="c" placeholder="¿Te invitaron? Poné el código" required><button class="alt">Usar</button></form>`}</div>` + await collectionCard(p, me.id);
+}
+async function useInv(e){ e.preventDefault(); const { data, error } = await sb.rpc('fg_redeem_invite', { p_code: new FormData(e.target).get('c').trim() }); if (error) return toast(error.message); toast('¡Listo! Premio de bienvenida: +' + cf(data) + ' 🪙'); await loadMe(); route(); }
+
+// ---- Comunidad: streamers destacados + feed ----
+const ago = d => { const s = (Date.now() - new Date(d)) / 1000; return s < 60 ? 'ahora' : s < 3600 ? Math.floor(s / 60) + ' min' : s < 86400 ? Math.floor(s / 3600) + ' h' : new Date(d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }); };
+const okU = u => /^https?:\/\//.test(u || '');
+const stCard = s => { const L = (Array.isArray(s.links) ? s.links : []).filter(l => okU(l.url)), nw = s.news_title && s.news_at && Date.now() - new Date(s.news_at) < 7 * 864e5;
+  return `<div class="card ${s.featured ? 'ft' : ''}"><div class="row" style="flex-wrap:nowrap">${s.image_url ? `<img class="sa" src="${esc(s.image_url)}" alt="">` : '<span class="sa">🎥</span>'}<div style="flex:1"><b>${esc(s.name)}</b> ${s.featured ? '<span class="tag warn">⭐ Destacado</span>' : ''}<div class="mut">${esc(s.platform)}</div></div>${s.is_live ? '<span class="tag bad">● EN VIVO</span>' : ''}</div>${s.bio ? `<p class="mut" style="margin:8px 0">${esc(s.bio)}</p>` : ''}
+  ${nw ? `<a class="nw" href="${esc(okU(s.news_url) ? s.news_url : s.url)}" target="_blank" rel="noopener">🆕 ${esc(s.news_title)}</a>` : ''}<div class="row" style="margin-top:10px"><a class="btn" href="${esc(s.url)}" target="_blank" rel="noopener">Ver canal</a>${L.map(l => `<a class="btn alt2" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}</div></div>`; };
+async function viewCommunity(){
+  const [st, ps] = await Promise.all([sb.from('streamers').select('*').eq('is_active', true).order('featured', { ascending: false }).order('is_live', { ascending: false }).order('name'), sb.from('posts').select('id,body,image_url,created_at,user_id,profiles(nick,avatar_url),post_likes(user_id)').order('created_at', { ascending: false }).limit(40)]);
+  const S = st.data || [], P = ps.data || [];
+  app.innerHTML = `<h1>Comunidad</h1><h2 class="sec">Streamers</h2>${S.length ? `<div class="grid">${S.map(stCard).join('')}</div>` : '<div class="card mut">Pronto vas a ver acá a los creadores de la comunidad.</div>'}
+  <h2 class="sec">Feed</h2><form class="card" onsubmit="post(event)"><textarea name="b" rows="2" maxlength="500" placeholder="¿Qué está pasando?"></textarea><div class="row" style="justify-content:space-between"><input type="file" name="img" accept="image/*" style="max-width:220px"><button>Publicar</button></div></form>
+  <div class="stack" style="margin-top:12px">${P.map(x => { const lk = (x.post_likes || []).some(l => l.user_id === me.id), nick = x.profiles?.nick || 'Jugador'; return `<div class="card"><div class="row" style="flex-wrap:nowrap">${x.profiles?.avatar_url ? `<img class="pa" src="${esc(x.profiles.avatar_url)}" alt="">` : `<span class="pa">${esc(nick[0] || '?').toUpperCase()}</span>`}<div style="flex:1"><a href="#/jugador/${x.user_id}"><b>${esc(nick)}</b></a></div><span class="mut">${ago(x.created_at)}</span></div>${x.body ? `<div class="pb">${esc(x.body)}</div>` : ''}${okU(x.image_url) ? `<img class="pi" src="${esc(x.image_url)}" alt="">` : ''}
+  <div class="row" style="margin-top:8px"><button class="alt" onclick="likeP('${x.id}',${lk})">${lk ? '❤️' : '🤍'} ${(x.post_likes || []).length}</button>${x.user_id === me.id || isAdmin() ? `<button class="alt" onclick="delPost('${x.id}')">Borrar</button>` : ''}</div></div>`; }).join('') || '<div class="card mut">Todavía no hay publicaciones. ¡Escribí la primera!</div>'}</div>`;
+}
+async function post(e){
+  e.preventDefault(); const f = new FormData(e.target), b = f.get('b').trim(), file = f.get('img'); if (!b && !(file && file.size)) return; let img = '';
+  if (file && file.size) { img = await uploadTo('public-assets', file, 'posts'); if (!img) return; }
+  const { error } = await sb.from('posts').insert({ user_id: me.id, body: b, image_url: img }); if (error) return toast(error.message); route();
+}
+async function likeP(id, on){ const { error } = on ? await sb.from('post_likes').delete().eq('post_id', id).eq('user_id', me.id) : await sb.from('post_likes').insert({ post_id: id, user_id: me.id }); if (error) return toast(error.message); const y = scrollY; await viewCommunity(); scrollTo(0, y); }
+
+// ---- Admin: streamers completos ----
+function stForm(s, h){
+  s = s || {}; const lk = (Array.isArray(s.links) ? s.links : []).map(l => l.label + ' | ' + l.url).join('\n');
+  return `<form onsubmit="${h}"><div class="two"><label>Nombre<input name="name" required value="${esc(s.name)}"></label><label>Plataforma<select name="platform">${['Kick', 'YouTube', 'Twitch', 'TikTok'].map(x => `<option ${s.platform === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>
+  <label>Link del canal<input name="url" required placeholder="https://..." value="${esc(s.url)}"></label><label>Descripción corta<input name="bio" value="${esc(s.bio)}"></label>
+  <label>Redes (una por línea: Nombre | link)<textarea name="links" rows="3" placeholder="Instagram | https://instagram.com/...">${esc(lk)}</textarea></label>
+  <div class="two"><label>Novedad (video o stream nuevo)<input name="nt" value="${esc(s.news_title)}" placeholder="Nuevo video: ..."></label><label>Link de la novedad<input name="nu" value="${esc(s.news_url)}"></label></div>
+  <label>Foto (opcional)<input type="file" name="img" accept="image/*"></label><label class="row"><input type="checkbox" name="ft" style="width:auto" ${s.featured ? 'checked' : ''}> Destacado</label><button>${s.id ? 'Guardar' : 'Agregar streamer'}</button></form>`;
+}
+function editSt(id){ mdl('Editar streamer', stForm(A.st[id], `saveSt(event,'${id}')`)); }
+async function saveSt(e, id){
+  e.preventDefault(); const f = new FormData(e.target), file = f.get('img'), old = id ? A.st[id] : {}; let img = old.image_url || '', url = f.get('url').trim();
+  if (!okU(url)) return toast('El link tiene que empezar con https://');
+  const links = f.get('links').split('\n').map(x => x.split('|').map(y => y.trim())).filter(a => a.length > 1 && okU(a[1])).map(a => ({ label: a[0] || 'Red', url: a[1] }));
+  if (file && file.size) { const u = await uploadTo('public-assets', file, 'streamers'); if (!u) return; img = u; }
+  const nt = f.get('nt').trim(), nu = f.get('nu').trim(), row = { name: f.get('name').trim(), platform: f.get('platform'), url, bio: f.get('bio').trim(), links, image_url: img, featured: f.get('ft') === 'on', news_title: nt, news_url: okU(nu) ? nu : '' };
+  if (!nt) row.news_at = null; else if (nt !== (old.news_title || '') || nu !== (old.news_url || '')) row.news_at = new Date().toISOString();
+  const { error } = id ? await sb.from('streamers').update(row).eq('id', id) : await sb.from('streamers').insert(row);
+  if (error) return toast(error.message); closeMdl(); toast('Guardado'); route();
+}
+
+// ---- Admin: reglas, premios de la caja e insignias ----
+const KINDS = { wins: 'Victorias', tournaments_won: 'Torneos ganados', elo_points: 'ELO', streak_best: 'Mejor racha', coins: 'Monedas', inventory_value: 'Valor del inventario', items_count: 'Cantidad de ítems', plus: 'Plus (poné 1)' };
+const CR = { box_prizes: { t: 'Premios del sorteo (caja e invitaciones)', cols: [['label', 'Nombre', 'text'], ['min_coins', 'Mín. monedas', 'number'], ['max_coins', 'Máx. monedas', 'number'], ['weight', 'Peso (más alto = más probable)', 'number']] }, badges: { t: 'Insignias', cols: [['icon', 'Emoji', 'text'], ['name', 'Nombre', 'text'], ['kind', 'Se gana por', 'sel'], ['threshold', 'Valor necesario', 'number']] } };
+const crForm = (tb, r, h) => { r = r || {}; return `<form onsubmit="${h}">${CR[tb].cols.map(([k, l, ty]) => `<label>${l}${ty === 'sel' ? `<select name="${k}">${Object.entries(KINDS).map(([a, b]) => `<option value="${a}" ${r[k] === a ? 'selected' : ''}>${b}</option>`).join('')}</select>` : `<input name="${k}" ${ty === 'number' ? 'type="number" min="0"' : ''} required value="${esc(r[k])}">`}</label>`).join('')}<button>${r.id ? 'Guardar' : 'Crear'}</button></form>`; };
+async function crAdmin(tb){
+  const c = CR[tb], { data } = await sb.from(tb).select('*').order('id'); A[tb] = {}; (data || []).forEach(r => A[tb][r.id] = r);
+  return `<div class="card" style="margin-top:14px"><h3 style="margin-bottom:10px">${c.t}</h3>${crForm(tb, null, `crSave(event,'${tb}')`)}</div><div class="card scroll" style="margin-top:14px"><table><tr>${c.cols.map(x => `<th>${x[1]}</th>`).join('')}<th></th></tr>${(data || []).map(r => `<tr>${c.cols.map(x => `<td>${esc(x[2] === 'sel' ? KINDS[r[x[0]]] || r[x[0]] : r[x[0]])}</td>`).join('')}<td class="row"><button onclick="crEdit('${tb}',${r.id})">Editar</button><button class="del" onclick="crDel('${tb}',${r.id})">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${c.cols.length + 1}" class="mut">Vacío.</td></tr>`}</table></div>`;
+}
+function crEdit(tb, id){ mdl('Editar', crForm(tb, A[tb][id], `crSave(event,'${tb}',${id})`)); }
+async function crSave(e, tb, id){
+  e.preventDefault(); const f = new FormData(e.target), row = {}; CR[tb].cols.forEach(([k, , ty]) => row[k] = ty === 'number' ? +f.get(k) || 0 : String(f.get(k)).trim());
+  const { error } = id ? await sb.from(tb).update(row).eq('id', id) : await sb.from(tb).insert(row); if (error) return toast(error.message); closeMdl(); toast('Guardado'); route();
+}
+async function crDel(tb, id){ if (!confirm('¿Eliminar?')) return; if (await dbDel(tb, 'id', id, 'Eliminado')) route(); }
+const SETK = [['streak_base', 'Racha: monedas base'], ['streak_step', 'Racha: monedas extra por día (hasta el 6º)'], ['streak_bonus7', 'Racha: bonus cada 7 días'], ['challenge_games', 'Desafío: partidas necesarias'], ['challenge_reward', 'Desafío: monedas de premio'], ['pred_reward', 'Predicción de partida acertada: monedas']];
+async function saveRules(e){ e.preventDefault(); const f = new FormData(e.target); const { error } = await sb.from('fg_settings').upsert(SETK.map(([k]) => ({ key: k, value: +f.get(k) || 0 }))); if (error) return toast(error.message); FGS = null; toast('Reglas guardadas'); route(); }
+const _adc11 = adminCommunity;
+adminCommunity = async function(){
+  FGS = null; const s = await loadFGS();
+  return await _adc11() + `<div class="card" style="margin-top:14px"><h3 style="margin-bottom:10px">Reglas de racha, desafío y predicciones</h3><form onsubmit="saveRules(event)">${SETK.map(([k, l]) => `<label>${l}<input type="number" min="0" name="${k}" value="${s[k] ?? FGD[k]}"></label>`).join('')}<button>Guardar reglas</button></form></div>` + await crAdmin('box_prizes') + await crAdmin('badges');
+};
+
+const _r11 = route;
+route = async function(){
+  await _r11(); const h = location.hash || '#/';
+  if (h.startsWith('#/jugador/') && me && profile) {
+    const id = h.split('/')[2], { data: p } = await sb.from('profiles').select('*').eq('id', id).maybeSingle();
+    if (p) { const html = await collectionCard(p, id); if ((location.hash || '') === h) app.querySelector('.stack')?.insertAdjacentHTML('beforeend', html); }
+  }
+};
+
+window.addEventListener('hashchange', route);
+sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; profile = null; } });
+loadMe().then(route);
 </script>
 </body>
 </html>
