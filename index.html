@@ -394,7 +394,7 @@ const RANKS = [['Novato',0,'#94a3b8'],['Bronce',5000,'#c08457'],['Plata',12000,'
 const rbadge = e => rankChip(e);
 let sponsors = [], cfg = null, navCount = 0;
 const isPlus = () => !!(profile && profile.plus_until && new Date(profile.plus_until) > new Date());
-const showAds = () => (!isPlus() || forceAds()) && sponsors.length > 0;
+const showAds = () => !isPlus() && sponsors.length > 0;
 
 async function loadCfg(){
   if (cfg) return;
@@ -1178,18 +1178,26 @@ function brand(){
   document.querySelectorAll('.logo .fg').forEach(el => { const i = document.createElement('img'); i.src = LOGO_MARK; i.alt = 'FG'; i.className = 'fgi'; i.loading = 'eager'; el.replaceWith(i); });
   document.querySelectorAll('.hero2').forEach(h => { if (h.querySelector('.lg')) return; const i = document.createElement('img'); i.src = LOGO_FULL; i.alt = 'FastGame Esports'; i.className = 'lg'; i.loading = 'eager'; i.width = 340; i.height = 207; h.prepend(i); });
 }
-// ---- Publicidad insistente (vuelve): barra con 5 s de espera en cada pantalla + ventana emergente ----
-const AD_WAIT = 5, AD_POP_FIRST = 2, AD_POP_EVERY = 3; // segundos de espera · ventana en la navegación Nº 2 y luego cada 3
-const forceAds = () => { try { return localStorage.getItem('fge_force_ads') === '1'; } catch (e) { return false; } };
-function toggleForceAds(on){ try { localStorage.setItem('fge_force_ads', on ? '1' : '0'); } catch (e) {} toast(on ? 'Ahora ves la publicidad con tu cuenta' : 'Ya no ves la publicidad con tu cuenta'); cfg = null; }
+// Publicidad Free: cuenta cambios reales de menú; no cuenta recargas de la misma pantalla.
+const AD_WAIT = 5, AD_POP_EVERY = 4;
+let adLastHash = location.hash || '#/';
+let adBarDismissedHash = '';
+const forceAds = () => false; // Plus nunca recibe anuncios.
+function toggleForceAds(on){ toast('La publicidad está desactivada para cuentas Plus.'); }
 function adExtras(){
   const top = document.getElementById('adtop'), bar = document.getElementById('adbar');
-  if ((location.hash || '') === '#/admin' || !showAds()) { top.innerHTML = ''; bar.innerHTML = ''; return; }
-  top.innerHTML = adBox('mini');
-  bar.innerHTML = `<div class="adsticky">${adBox('mini')}<button class="alt" id="adx"></button></div>`;
-  countdown(document.getElementById('adx'), AD_WAIT, 'Cerrar en', () => { bar.innerHTML = ''; });
-  navCount++;
-  if (navCount >= AD_POP_FIRST && (navCount - AD_POP_FIRST) % AD_POP_EVERY === 0 && !document.querySelector('.adpop')) {
+  if (!top || !bar) return;
+  const h = location.hash || '#/';
+  const changed = h !== adLastHash;
+  if (changed) { adLastHash = h; adBarDismissedHash = ''; if (h !== '#/admin') navCount++; }
+  if (h === '#/admin' || !showAds()) { top.innerHTML = ''; bar.innerHTML = ''; bar.dataset.route = ''; return; }
+  if (!top.innerHTML) top.innerHTML = adBox('mini');
+  if (bar.dataset.route !== h && adBarDismissedHash !== h) {
+    bar.dataset.route = h;
+    bar.innerHTML = `<div class="adsticky">${adBox('mini')}<button class="alt" id="adx"></button></div>`;
+    const close = document.getElementById('adx'); if (close) countdown(close, AD_WAIT, 'Cerrar en', () => { bar.innerHTML = ''; bar.dataset.route = ''; adBarDismissedHash = h; });
+  }
+  if (changed && navCount > 0 && navCount % AD_POP_EVERY === 0 && !document.querySelector('.adpop')) {
     const d = document.createElement('div'); d.className = 'pop adpop';
     d.innerHTML = `<div class="card stack">${adBox()}<p class="mut">¿Cansado de la publicidad? <a href="#/plus" onclick="this.closest('.pop').remove()">Pasate a FastGame Plus</a></p><button></button></div>`;
     document.body.appendChild(d); countdown(d.querySelector('button'), AD_WAIT, 'Podés cerrar en', () => d.remove());
@@ -1198,7 +1206,7 @@ function adExtras(){
 const _adS = adminSponsors;
 adminSponsors = async function(){
   const n = sponsors.length;
-  const note = `<div class="card" style="margin-bottom:14px"><b>Estado de la publicidad:</b> ${n ? n + ' sponsor(s) activo(s). Se muestra a las cuentas sin Plus.' : '<span style="color:var(--warn)">No hay sponsors activos, por eso no se muestra publicidad. Agregá o activá uno.</span>'}${isPlus() ? '<div class="mut" style="margin-top:4px">Tu cuenta tiene Plus, por eso no ves anuncios.</div>' : ''}<div class="mut" style="margin-top:4px">En esta pestaña de Admin no se muestran anuncios, para que no te interrumpan mientras editás.</div><label class="row" style="margin-top:8px"><input type="checkbox" style="width:auto" ${forceAds() ? 'checked' : ''} onchange="toggleForceAds(this.checked)"> Ver la publicidad con mi cuenta aunque tenga Plus</label></div>`;
+  const note = `<div class="card" style="margin-bottom:14px"><b>Estado de la publicidad:</b> ${n ? n + ' sponsor(s) activo(s). Se muestra a las cuentas Free.' : '<span style="color:var(--warn)">No hay sponsors activos, por eso no se muestra publicidad. Agregá o activá uno.</span>'}${isPlus() ? '<div class="mut" style="margin-top:4px">Tu cuenta tiene Plus, por eso no ves anuncios.</div>' : ''}<div class="mut" style="margin-top:4px">En esta pestaña de Admin no se muestran anuncios. Las cuentas Plus nunca reciben publicidad.</div></div>`;
   return note + await _adS();
 };
 function mobExtras(){
@@ -1268,7 +1276,17 @@ async function hubCard(){
   <div class="hr"><div><b>Caja misteriosa</b><div class="mut">Una caja por día con monedas sorpresa.</div></div>${B(p.last_box === t, 1, 'fg_open_box', 'Abrir 🎁')}</div>
   <div class="hr"><div><b>Desafío del día</b><div class="mut">Jugá ${GM} partidas en la <a href="#/arena">Arena</a> (${Math.min(n, GM)}/${GM})</div></div>${B(p.last_challenge === t, n >= GM, 'fg_claim_challenge', 'Cobrar')}</div></div>`;
 }
-async function hub(fn){ const { data, error } = await sb.rpc(fn); if (error) return toast(error.message); toast('+' + cf(data) + ' monedas 🪙'); await loadMe(); route(); }
+let fgHubBusy = false;
+async function hub(fn){
+  if (fgHubBusy) return; fgHubBusy = true;
+  try {
+    const { data, error } = await sb.rpc(fn);
+    if (error) { toast(error.message); return; }
+    if (data === null || data === undefined) { toast('El servidor no confirmó la recompensa. Actualizá e intentá de nuevo.'); return; }
+    toast('+' + cf(data) + ' monedas acreditadas 🪙');
+    await loadMe(); header(); await route();
+  } finally { fgHubBusy = false; }
+}
 
 async function profileExtras(){
   const { data: code } = await sb.rpc('fg_my_invite'); if (!code) return '';
@@ -1295,11 +1313,15 @@ async function delPost(id){ if (!confirm('¿Borrar esta publicación?')) return;
 // ---- Admin: Comunidad (streamers + feed) ----
 const stForm0 = (s, h) => { s = s || {}; return `<form onsubmit="${h}"><div class="two"><label>Nombre<input name="name" required value="${esc(s.name)}"></label><label>Plataforma<select name="platform">${['Kick', 'YouTube', 'Twitch', 'TikTok'].map(x => `<option ${s.platform === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div><label>Link del canal<input name="url" required placeholder="https://..." value="${esc(s.url)}"></label><label>Foto (opcional)<input type="file" name="img" accept="image/*"></label><button>${s.id ? 'Guardar' : 'Agregar streamer'}</button></form>`; };
 async function adminCommunity(){
-  const [st, ps] = await Promise.all([sb.from('streamers').select('*').order('name'), sb.from('posts').select('id,body,profiles(nick)').order('created_at', { ascending: false }).limit(40)]);
+  const [st, ps] = await Promise.all([sb.from('streamers').select('*').order('name'), sb.from('posts').select('id,body,user_id,created_at').order('created_at', { ascending: false }).limit(40)]);
+  if (st.error) throw st.error; if (ps.error) throw ps.error;
+  const ids=[...new Set((ps.data||[]).map(x=>x.user_id).filter(Boolean))];
+  const pr=ids.length ? await sb.from('profiles').select('id,nick').in('id',ids) : {data:[],error:null};
+  if(pr.error) throw pr.error; const pn=Object.fromEntries((pr.data||[]).map(x=>[x.id,x.nick]));
   A.st = {}; (st.data || []).forEach(s => A.st[s.id] = s);
   return `<div class="card"><h3 style="margin-bottom:10px">Nuevo streamer</h3>${stForm(null, 'saveSt(event)')}</div>
   <div class="card scroll" style="margin-top:14px"><table><tr><th>Streamer</th><th>En vivo</th><th></th></tr>${(st.data || []).map(s => `<tr><td>${esc(s.name)}<div class="mut">${esc(s.platform)}${s.is_active ? '' : ' · oculto'}</div></td><td><button class="alt" onclick="stSet('${s.id}',{is_live:${!s.is_live}})">${s.is_live ? 'Sí · apagar' : 'No · prender'}</button></td><td class="row"><button onclick="editSt('${s.id}')">Editar</button><button class="alt" onclick="stSet('${s.id}',{is_active:${!s.is_active}})">${s.is_active ? 'Ocultar' : 'Mostrar'}</button><button class="del" onclick="delSt('${s.id}')">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="3" class="mut">Todavía no hay streamers.</td></tr>'}</table></div>
-  <h3 style="margin:18px 0 10px">Últimas publicaciones del feed</h3><div class="card scroll"><table><tr><th>Jugador</th><th>Texto</th><th></th></tr>${(ps.data || []).map(x => `<tr><td>${esc(x.profiles?.nick)}</td><td>${esc(x.body)}</td><td class="row"><button class="del" onclick="delPost('${x.id}')">Borrar</button></td></tr>`).join('') || '<tr><td colspan="3" class="mut">Sin publicaciones.</td></tr>'}</table></div>`;
+  <h3 style="margin:18px 0 10px">Últimas publicaciones del feed</h3><div class="card scroll"><table><tr><th>Jugador</th><th>Texto</th><th></th></tr>${(ps.data || []).map(x => `<tr><td>${esc(pn[x.user_id] || 'Jugador')}</td><td>${esc(x.body || '📷 Imagen')}</td><td class="row"><button class="del" onclick="delPost('${x.id}')">Borrar</button></td></tr>`).join('') || '<tr><td colspan="3" class="mut">Sin publicaciones.</td></tr>'}</table></div>`;
 }
 function editSt(id){ mdl('Editar streamer', stForm(A.st[id], `saveSt(event,'${id}')`)); }
 async function saveSt(e, id){
@@ -1357,7 +1379,7 @@ async function pickM(m, p, t){ const { error } = await sb.from('match_prediction
 
 const _adc = adminCommunity;
 adminCommunity = async function(){
-  return `<div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:10px">Pase de temporada</h3><form onsubmit="saveSeason(event)" class="row" style="flex-wrap:nowrap"><input name="n" value="${esc((cfg && cfg.season_name) || '')}" placeholder="Nombre (ej. Temporada 1)" required><button>Guardar</button></form><p class="mut" style="margin:8px 0">Una temporada nueva reinicia el XP y los niveles cobrados de todos.</p><button class="del" onclick="newSeason()">Nueva temporada (reiniciar XP)</button></div>` + await _adc();
+  return `<div class="card" style="margin-bottom:14px"><h3 style="margin-bottom:10px">Pase de XP (independiente del ranking bimestral)</h3><form onsubmit="saveSeason(event)" class="row" style="flex-wrap:nowrap"><input name="n" value="${esc((cfg && cfg.season_name) || '')}" placeholder="Nombre (ej. Temporada 1)" required><button>Guardar</button></form><p class="mut" style="margin:8px 0">Este pase de XP es independiente de las temporadas del ranking. El reinicio solo afecta el progreso del pase.</p><button class="del" onclick="newSeason()">Reiniciar pase de XP</button></div>` + await _adc();
 };
 async function saveSeason(e){ e.preventDefault(); const { error } = await sb.from('app_settings').upsert({ key: 'season_name', value: new FormData(e.target).get('n').trim(), is_public: true }); if (error) return toast(error.message); cfg = null; toast('Guardado'); route(); }
 async function newSeason(){ if (!confirm('¿Reiniciar el XP y los niveles de TODOS los jugadores?')) return; const { error } = await sb.rpc('fg_new_season'); if (error) return toast(error.message); toast('Temporada reiniciada'); route(); }
@@ -1382,15 +1404,18 @@ function openBox(){
   document.getElementById('bx').onclick = doBox;
 }
 async function doBox(){
-  const b = document.getElementById('bx'); if (b.dataset.u) return; b.dataset.u = 1; b.classList.add('shake'); document.getElementById('bxt').textContent = 'Abriendo...';
-  const [{ data, error }] = await Promise.all([sb.rpc('fg_open_box'), new Promise(r => setTimeout(r, 1300))]);
-  if (error) { closeMdl(); return toast(error.message); }
-  b.classList.remove('shake'); b.classList.add('open'); b.textContent = '📦';
-  const t = document.getElementById('bxt');
-  if (!data) t.innerHTML = '<b>La caja estaba vacía 💨</b><br>Mañana hay otra chance';
-  else { t.innerHTML = `<b style="font-size:24px;color:var(--warn)">+${cf(data)} 🪙</b>`; document.getElementById('bxc').innerHTML = Array.from({ length: Math.min(26, 6 + Math.floor(data / 200)) }, () => `<i class="coin" style="left:${5 + Math.random() * 90}%;animation-delay:${(Math.random() * .8).toFixed(2)}s">🪙</i>`).join(''); }
-  await loadMe(); header();
-  document.querySelector('#mdl .mdlc')?.insertAdjacentHTML('beforeend', '<button style="margin-top:14px" onclick="closeMdl();route()">Listo</button>');
+  const b = document.getElementById('bx'); if (!b || b.dataset.u) return; b.dataset.u = 1; b.classList.add('shake'); document.getElementById('bxt').textContent = 'Abriendo...';
+  try {
+    const [res] = await Promise.all([sb.rpc('fg_open_box'), new Promise(r => setTimeout(r, 1300))]);
+    if (res.error) { closeMdl(); return toast(res.error.message); }
+    const data = Number(res.data);
+    if (!Number.isFinite(data) || data <= 0) { closeMdl(); return toast('No recibimos una confirmación válida de la caja.'); }
+    b.classList.remove('shake'); b.classList.add('open'); b.textContent = '📦';
+    document.getElementById('bxt').innerHTML = `<b style="font-size:24px;color:var(--warn)">+${cf(data)} 🪙</b>`;
+    document.getElementById('bxc').innerHTML = Array.from({ length: Math.min(26, 6 + Math.floor(data / 200)) }, () => `<i class="coin" style="left:${5 + Math.random() * 90}%;animation-delay:${(Math.random() * .8).toFixed(2)}s">🪙</i>`).join('');
+    await loadMe(); header();
+    document.querySelector('#mdl .mdlc')?.insertAdjacentHTML('beforeend', '<button style="margin-top:14px" onclick="closeMdl();route()">Listo</button>');
+  } catch (err) { closeMdl(); toast('No se pudo abrir la caja: ' + (err.message || err)); }
 }
 
 const bval = (p, k, V) => ({ wins: p.wins, tournaments_won: p.tournaments_won, elo_points: p.elo_points, streak_best: p.streak_best, coins: p.coins, inventory_value: V.val, items_count: V.n, plus: p.plus_until && new Date(p.plus_until) > new Date() ? 1 : 0 })[k] || 0;
@@ -1418,17 +1443,44 @@ const stCard = s => { const L = (Array.isArray(s.links) ? s.links : []).filter(l
   return `<div class="card ${s.featured ? 'ft' : ''}"><div class="row" style="flex-wrap:nowrap">${s.image_url ? `<img class="sa" src="${esc(s.image_url)}" alt="">` : '<span class="sa">🎥</span>'}<div style="flex:1"><b>${esc(s.name)}</b> ${s.featured ? '<span class="tag warn">⭐ Destacado</span>' : ''}<div class="mut">${esc(s.platform)}</div></div>${s.is_live ? '<span class="tag bad">● EN VIVO</span>' : ''}</div>${s.bio ? `<p class="mut" style="margin:8px 0">${esc(s.bio)}</p>` : ''}
   ${nw ? `<a class="nw" href="${esc(okU(s.news_url) ? s.news_url : s.url)}" target="_blank" rel="noopener">🆕 ${esc(s.news_title)}</a>` : ''}<div class="row" style="margin-top:10px"><a class="btn" href="${esc(s.url)}" target="_blank" rel="noopener">Ver canal</a>${L.map(l => `<a class="btn alt2" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}</div></div>`; };
 async function viewCommunity(){
-  const [st, ps] = await Promise.all([sb.from('streamers').select('*').eq('is_active', true).order('featured', { ascending: false }).order('is_live', { ascending: false }).order('name'), sb.from('posts').select('id,body,image_url,created_at,user_id,profiles(nick,avatar_url),post_likes(user_id)').order('created_at', { ascending: false }).limit(40)]);
-  const S = st.data || [], P = ps.data || [];
+  const [st, ps] = await Promise.all([
+    sb.from('streamers').select('*').eq('is_active', true).order('featured', { ascending: false }).order('is_live', { ascending: false }).order('name'),
+    sb.from('posts').select('id,body,image_url,created_at,user_id').order('created_at', { ascending: false }).limit(40)
+  ]);
+  if (st.error) throw new Error('No se pudieron cargar los streamers: ' + st.error.message);
+  if (ps.error) throw new Error('No se pudo cargar el Feed: ' + ps.error.message + '. Revisá la migración V12 y los permisos de posts.');
+  const S = st.data || [], P = ps.data || [], ids = [...new Set(P.map(x => x.user_id).filter(Boolean))];
+  let profs = [], likes = [];
+  if (ids.length) {
+    const [pr, lk] = await Promise.all([
+      sb.from('profiles').select('id,nick,avatar_url').in('id', ids),
+      sb.from('post_likes').select('post_id,user_id').in('post_id', P.map(x => x.id))
+    ]);
+    if (pr.error) throw new Error('No se pudieron cargar los autores del Feed: ' + pr.error.message);
+    if (lk.error) throw new Error('No se pudieron cargar los Me gusta: ' + lk.error.message);
+    profs = pr.data || []; likes = lk.data || [];
+  }
+  const pm = Object.fromEntries(profs.map(p => [p.id, p]));
+  const lm = Object.groupBy ? Object.groupBy(likes, x => x.post_id) : likes.reduce((a,x) => ((a[x.post_id] ||= []).push(x),a),{});
   app.innerHTML = `<h1>Comunidad</h1><h2 class="sec">Streamers</h2>${S.length ? `<div class="grid">${S.map(stCard).join('')}</div>` : '<div class="card mut">Pronto vas a ver acá a los creadores de la comunidad.</div>'}
-  <h2 class="sec">Feed</h2><form class="card" onsubmit="post(event)"><textarea name="b" rows="2" maxlength="500" placeholder="¿Qué está pasando?"></textarea><div class="row" style="justify-content:space-between"><input type="file" name="img" accept="image/*" style="max-width:220px"><button>Publicar</button></div></form>
-  <div class="stack" style="margin-top:12px">${P.map(x => { const lk = (x.post_likes || []).some(l => l.user_id === me.id), nick = x.profiles?.nick || 'Jugador'; return `<div class="card"><div class="row" style="flex-wrap:nowrap">${x.profiles?.avatar_url ? `<img class="pa" src="${esc(x.profiles.avatar_url)}" alt="">` : `<span class="pa">${esc(nick[0] || '?').toUpperCase()}</span>`}<div style="flex:1"><a href="#/jugador/${x.user_id}"><b>${esc(nick)}</b></a></div><span class="mut">${ago(x.created_at)}</span></div>${x.body ? `<div class="pb">${esc(x.body)}</div>` : ''}${okU(x.image_url) ? `<img class="pi" src="${esc(x.image_url)}" alt="">` : ''}
-  <div class="row" style="margin-top:8px"><button class="alt" onclick="likeP('${x.id}',${lk})">${lk ? '❤️' : '🤍'} ${(x.post_likes || []).length}</button>${x.user_id === me.id || isAdmin() ? `<button class="alt" onclick="delPost('${x.id}')">Borrar</button>` : ''}</div></div>`; }).join('') || '<div class="card mut">Todavía no hay publicaciones. ¡Escribí la primera!</div>'}</div>`;
+  <h2 class="sec">Feed</h2><form class="card" onsubmit="post(event)"><textarea name="b" rows="2" maxlength="500" placeholder="¿Qué está pasando? (texto opcional si adjuntás una imagen)"></textarea><div class="row" style="justify-content:space-between;align-items:center"><input type="file" name="img" accept="image/png,image/jpeg,image/webp,image/gif" style="max-width:240px"><button>Publicar</button></div><p class="mut" style="margin:6px 0 0">Texto de hasta 500 caracteres · Imagen hasta 5 MB.</p></form>
+  <div class="stack" style="margin-top:12px">${P.map(x => { const author = pm[x.user_id] || {}, nick = author.nick || 'Jugador', pl = lm[x.id] || [], lk = pl.some(l => l.user_id === me.id); return `<div class="card"><div class="row" style="flex-wrap:nowrap">${author.avatar_url ? `<img class="pa" src="${esc(author.avatar_url)}" alt="">` : `<span class="pa">${esc((nick[0] || '?').toUpperCase())}</span>`}<div style="flex:1"><a href="#/jugador/${x.user_id}"><b>${esc(nick)}</b></a></div><span class="mut">${ago(x.created_at)}</span></div>${x.body ? `<div class="pb">${esc(x.body)}</div>` : ''}${okU(x.image_url) ? `<img class="pi" src="${esc(x.image_url)}" alt="Imagen publicada por ${esc(nick)}" loading="lazy">` : ''}
+  <div class="row" style="margin-top:8px"><button class="alt" onclick="likeP('${x.id}',${lk})">${lk ? '❤️' : '🤍'} ${pl.length}</button>${x.user_id === me.id || isAdmin() ? `<button class="alt" onclick="delPost('${x.id}')">Borrar</button>` : ''}</div></div>`; }).join('') || '<div class="card mut">Todavía no hay publicaciones. ¡Escribí la primera!</div>'}</div>`;
 }
 async function post(e){
-  e.preventDefault(); const f = new FormData(e.target), b = f.get('b').trim(), file = f.get('img'); if (!b && !(file && file.size)) return; let img = '';
-  if (file && file.size) { img = await uploadTo('public-assets', file, 'posts'); if (!img) return; }
-  const { error } = await sb.from('posts').insert({ user_id: me.id, body: b, image_url: img }); if (error) return toast(error.message); route();
+  e.preventDefault(); if (!me) return toast('Ingresá para publicar.');
+  const f = new FormData(e.target), b = String(f.get('b') || '').trim(), file = f.get('img');
+  if (!b && !(file && file.size)) return toast('Escribí algo o adjuntá una imagen.');
+  if (b.length > 500) return toast('El texto no puede superar los 500 caracteres.');
+  let img = '';
+  if (file && file.size) {
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) return toast('Formato no permitido. Usá PNG, JPG, WebP o GIF.');
+    if (file.size > 5 * 1024 * 1024) return toast('La imagen supera los 5 MB.');
+    img = await uploadTo('public-assets', file, 'posts'); if (!img) return;
+  }
+  const { error } = await sb.from('posts').insert({ user_id: me.id, body: b, image_url: img });
+  if (error) return toast('No se pudo publicar: ' + error.message);
+  toast('¡Publicación compartida!'); e.target.reset(); await route();
 }
 async function likeP(id, on){ const { error } = on ? await sb.from('post_likes').delete().eq('post_id', id).eq('user_id', me.id) : await sb.from('post_likes').insert({ post_id: id, user_id: me.id }); if (error) return toast(error.message); const y = scrollY; await viewCommunity(); scrollTo(0, y); }
 
@@ -1482,6 +1534,68 @@ route = async function(){
     const id = h.split('/')[2], { data: p } = await sb.from('profiles').select('*').eq('id', id).maybeSingle();
     if (p) { const html = await collectionCard(p, id); if ((location.hash || '') === h) app.querySelector('.stack')?.insertAdjacentHTML('beforeend', html); }
   }
+};
+
+
+// ===== FastGame V12 · Feed robusto + temporadas bimestrales + navegación de anuncios =====
+async function viewSeason(){
+  if (!me) { app.innerHTML = '<div class="card">Para ver las temporadas, <a href="#/login">ingresá o creá tu cuenta</a>.</div>'; return; }
+  const { data: sid, error: se } = await sb.rpc('fg_ensure_season');
+  if (se) throw new Error('No se pudo cargar la temporada. Ejecutá fastgame_v12.sql en Supabase: ' + se.message);
+  const [{ data: season, error: qe }, { data: scores, error: sce }] = await Promise.all([
+    sb.from('fg_seasons').select('*').eq('id', sid).maybeSingle(),
+    sb.from('fg_season_scores').select('user_id,coins_earned,elo_earned,best_streak').eq('season_id', sid)
+  ]);
+  if (qe) throw qe; if (sce) throw sce;
+  const ids = (scores || []).map(x => x.user_id);
+  const { data: players, error: pe } = ids.length ? await sb.from('profiles').select('id,nick,avatar_url').in('id', ids) : { data: [], error: null };
+  if (pe) throw pe;
+  const names = Object.fromEntries((players || []).map(p => [p.id, p.nick || 'Jugador']));
+  const fmt = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('es-AR') : '—';
+  const board = (field, label, suffix='') => {
+    const rows = [...(scores || [])].sort((a,b) => (Number(b[field])||0) - (Number(a[field])||0)).slice(0,10);
+    return `<div class="card"><h3>${label}</h3><div class="scroll"><table><tr><th>#</th><th>Jugador</th><th>Resultado</th></tr>${rows.map((x,i)=>`<tr><td>${i+1}</td><td><a href="#/jugador/${x.user_id}">${esc(names[x.user_id] || 'Jugador')}</a></td><td><b>${cf(x[field] || 0)}${suffix}</b></td></tr>`).join('') || '<tr><td colspan="3" class="mut">Todavía no hay resultados para esta categoría.</td></tr>'}</table></div></div>`;
+  };
+  app.innerHTML = `<div class="row" style="justify-content:space-between;align-items:end;flex-wrap:wrap"><div><h1>🏆 Temporada</h1><p class="mut">Clasificaciones bimestrales de FastGame Esports.</p></div><span class="tag ok">${season?.is_active ? 'En curso' : 'Finalizada'}</span></div>
+  <div class="card"><h2>${esc(season?.title || 'Temporada actual')}</h2><p class="mut">${fmt(season?.start_date)} al ${fmt(season?.end_date)} · Los resultados se guardan por temporada y no reinician tus monedas ni tu ELO global.</p></div>
+  <div class="grid">${board('coins_earned','🪙 Monedas ganadas')}${board('elo_earned','⚡ ELO ganado')}${board('best_streak','🔥 Mejor racha',' días')}</div>`;
+}
+async function saveRankingSeason(e){
+  e.preventDefault(); const f=new FormData(e.target), id=String(f.get('id')||''), title=String(f.get('title')||'').trim(), start=String(f.get('start')||''), end=String(f.get('end')||'');
+  if (!title || !start || !end || end < start) return toast('Completá el nombre y un rango de fechas válido.');
+  const { error } = await sb.rpc('fg_admin_update_season',{p_id:id,p_title:title,p_start:start,p_end:end});
+  if(error) return toast(error.message); toast('Temporada actualizada'); route();
+}
+async function createRankingSeason(e){
+  e.preventDefault(); const f=new FormData(e.target), title=String(f.get('title')||'').trim(), start=String(f.get('start')||''), end=String(f.get('end')||'');
+  if (!title || !start || !end || end < start) return toast('Completá el nombre y un rango de fechas válido.');
+  const { error } = await sb.rpc('fg_admin_new_season',{p_title:title,p_start:start,p_end:end});
+  if(error) return toast(error.message); toast('Nueva temporada creada. El historial anterior se conserva.'); route();
+}
+const _adminCommunityV12 = adminCommunity;
+adminCommunity = async function(){
+  const base = await _adminCommunityV12();
+  const { data: sid, error } = await sb.rpc('fg_ensure_season');
+  if (error) return base + `<div class="card" style="margin-top:14px"><b>Temporadas:</b> ${esc(error.message)}. Ejecutá la migración V12.</div>`;
+  const { data:s } = await sb.from('fg_seasons').select('*').eq('id',sid).maybeSingle();
+  const d = x => x || '';
+  return base + `<div class="card" style="margin-top:14px"><h3>🏆 Ranking de temporadas bimestrales</h3><p class="mut">Editá la temporada activa o creá una nueva. Los resultados anteriores quedan guardados y las estadísticas globales no se reinician.</p>
+  ${s ? `<form onsubmit="saveRankingSeason(event)"><input type="hidden" name="id" value="${esc(s.id)}"><label>Nombre de temporada<input name="title" required value="${esc(s.title)}"></label><div class="two"><label>Desde<input type="date" name="start" required value="${d(s.start_date)}"></label><label>Hasta<input type="date" name="end" required value="${d(s.end_date)}"></label></div><button>Guardar temporada</button></form>` : ''}
+  <hr style="border-color:var(--line);margin:14px 0"><h4>Crear próxima temporada</h4><form onsubmit="createRankingSeason(event)"><label>Nombre<input name="title" required placeholder="Temporada 2"></label><div class="two"><label>Desde<input type="date" name="start" required></label><label>Hasta<input type="date" name="end" required></label></div><button class="alt">Crear y activar nueva temporada</button></form></div>`;
+};
+function header(){
+  const h=location.hash||'#/'; const l=(href,t)=>`<a href="${href}" class="${h===href?'on':''}">${t}</a>`;
+  document.getElementById('top').innerHTML=`<a href="#/" class="logo"><span class="fg">FG</span>FAST<b>GAME</b> ESPORTS</a><nav>${l('#/','Inicio')}${l('#/torneos','Torneos')}${l('#/ranking','Ranking')}${l('#/temporada','🏆 Temporada')}${l('#/comunidad','Comunidad')}${l('#/plus','⭐ Plus')}${l('#/jugadores','Jugadores')}${l('#/arena','Arena FGE')}${l('#/tienda','Tienda')}${isAdmin()?l('#/admin','Admin'):''}${me?`<a href="#/arena" title="Tus monedas FGE">🪙 ${cf(profile?.coins)}</a>`+l('#/perfil','Mi perfil')+'<a href="#" onclick="logout();return false">Salir</a>':l('#/login','Ingresar')}</nav>`;
+}
+const _routeV12 = route;
+route = async function(){
+  const h=location.hash||'#/';
+  if(h==='#/temporada'){
+    await loadCfg(); header();
+    try { await viewSeason(); } catch(e){ app.innerHTML=`<div class="card"><h3>No se pudo cargar la temporada</h3><p class="mut">${esc(e.message)}</p></div>`; }
+    footer(); adExtras(); if(typeof postRender==='function') postRender(); brand(); return;
+  }
+  await _routeV12();
 };
 
 window.addEventListener('hashchange', route);
